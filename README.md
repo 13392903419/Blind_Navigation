@@ -67,13 +67,29 @@ When the system detects a change in tactile paving direction (left or right turn
 
 This creates a more human-like and engaging experience compared to static, pre-recorded messages.
 
+## 🎯 Pre-trained YOLO Model
+
+This project includes a **fully trained YOLOv8 tactile paving detection model** with excellent performance:
+
+- **Model Location**: `yolo/best.pt`
+- **Training Results**: The `yolo/` folder contains comprehensive training metrics:
+  - Confusion matrices (normalized and raw)
+  - Precision-Recall curves
+  - F1 score curves
+  - Training results visualization
+
+You can use this model directly without any additional training. The model has been trained on a custom tactile paving dataset and achieves high accuracy in detecting tactile paving patterns and direction changes.
+
+**Note for GitHub**: If the model file (`yolo/best.pt`) exceeds 100MB, you may need to use [Git LFS](https://git-lfs.github.com/) to upload it to GitHub, or provide a download link in the README instead.
+
 ## 📋 Requirements
 
 - Python 3.8+
 - MySQL Database
 - Ollama with qwen2.5:3b model installed
-- YOLO model weights file (requires training or using provided model)
 - Required Python libraries (see installation steps below)
+
+**Note**: This project includes a pre-trained YOLOv8 tactile paving detection model in the `yolo/` folder, so you don't need to train your own model!
 
 ## 🚀 Installation
 
@@ -137,18 +153,26 @@ The application will automatically create required tables on first run.
 
 ### 6. Configuration
 
-Modify configuration in `config.py` (copy from `config.example.py`):
+Copy `config.example.py` to `config.py` and modify the configuration:
+
+```bash
+cp config.example.py config.py  # Linux/Mac
+copy config.example.py config.py  # Windows
+```
+
+Then modify `config.py`:
 
 - **Database Config** (`DB_CONFIG`): Set MySQL host, user, password, etc.
 - **Email Config** (`EMAIL_CONFIG`): Configure QQ email SMTP service (for verification codes)
 - **Baidu Map Config** (`BAIDU_MAP_CONFIG`): Set Baidu Map API key
 - **DeepSeek AI Config** (`DEEPSEEK_CONFIG`): Set DeepSeek AI API key
-- **YOLO Model Path** (`MODEL_WEIGHTS`): Set path to trained YOLO model weights
+- **YOLO Model Path** (`MODEL_WEIGHTS`): Set to `'yolo/best.pt'` (pre-trained model included)
 
-### 7. Prepare YOLO Model
-
-- If you have a trained model: Configure the model weights file path in `config.py` under `MODEL_WEIGHTS`
-- If you need to train a model: Use your own tactile paving dataset for training (based on ultralytics library)
+Example configuration:
+```python
+# YOLO model configuration
+MODEL_WEIGHTS = 'yolo/best.pt'  # Use the included pre-trained model
+```
 
 ## 🏃 Running the Application
 
@@ -280,7 +304,12 @@ blind_navigation/
 │   ├── login.html
 │   ├── register.html
 │   └── forget_password.html
-└── uploads/              # Upload directory
+├── uploads/              # Upload directory
+└── yolo/                 # Pre-trained YOLO model
+    ├── best.pt           # Model weights (ready to use!)
+    ├── results.png       # Training results visualization
+    ├── confusion_matrix.png
+    └── ...               # Other training metrics
 ```
 
 ## 📄 License
