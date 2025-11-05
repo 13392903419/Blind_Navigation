@@ -80,8 +80,6 @@ This project includes a **fully trained YOLOv8 tactile paving detection model** 
 
 You can use this model directly without any additional training. The model has been trained on a custom tactile paving dataset and achieves high accuracy in detecting tactile paving patterns and direction changes.
 
-**Note for GitHub**: If the model file (`yolo/best.pt`) exceeds 100MB, you may need to use [Git LFS](https://git-lfs.github.com/) to upload it to GitHub, or provide a download link in the README instead.
-
 ## 📋 Requirements
 
 - Python 3.8+
@@ -325,3 +323,4 @@ For detailed terms, please refer to the [LICENSE](LICENSE) file.
 ---
 
 ⭐ If this project helps you, please give it a star!
+
