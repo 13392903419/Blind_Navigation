@@ -1,7 +1,6 @@
 task: detect
 mode: train
 model: yolov8n.pt
-data: C:\Users\jeffr\Desktop\ultralytics-main\yolo-bvn.yaml
 epochs: 100
 time: null
 patience: 100
@@ -105,3 +104,4 @@ crop_fraction: 1.0
 cfg: null
 tracker: botsort.yaml
 save_dir: runs\detect\train16
+
