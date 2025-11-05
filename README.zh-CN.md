@@ -67,13 +67,29 @@
 
 这创造了比静态预录音消息更加人性化和有吸引力的体验。
 
+## 🎯 预训练YOLO模型
+
+本项目包含了一个**效果完美的YOLOv8盲道检测模型**：
+
+- **模型位置**：`yolo/best.pt`
+- **训练结果**：`yolo/` 文件夹包含了完整的训练指标：
+  - 混淆矩阵（归一化和原始）
+  - 精确率-召回率曲线
+  - F1分数曲线
+  - 训练结果可视化
+
+您可以直接使用这个模型，无需进行任何额外的训练。该模型在自定义盲道数据集上训练，在检测盲道图案和方向变化方面具有很高的准确性。
+
+**GitHub上传提示**：如果模型文件（`yolo/best.pt`）超过100MB，您可能需要使用 [Git LFS](https://git-lfs.github.com/) 来上传到GitHub，或者在README中提供下载链接。
+
 ## 📋 环境要求
 
 - Python 3.8+
 - MySQL 数据库
 - Ollama 及 qwen2.5:3b 模型
-- YOLO模型权重文件（需要自行训练或使用提供的模型）
 - 必要的Python库（见下方安装步骤）
+
+**注意**：本项目在 `yolo/` 文件夹中包含了已训练好的YOLOv8盲道检测模型，您无需自己训练模型！
 
 ## 🚀 安装步骤
 
@@ -137,18 +153,26 @@ CREATE DATABASE blind_navigation CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_c
 
 ### 6. 配置文件
 
-修改 `config.py` 中的配置信息（从 `config.example.py` 复制）：
+将 `config.example.py` 复制为 `config.py` 并修改配置：
+
+```bash
+cp config.example.py config.py  # Linux/Mac
+copy config.example.py config.py  # Windows
+```
+
+然后修改 `config.py` 中的配置：
 
 - **数据库配置** (`DB_CONFIG`)：设置MySQL的host、user、password等
 - **邮件配置** (`EMAIL_CONFIG`)：配置QQ邮箱的SMTP服务（用于验证码发送）
 - **百度地图配置** (`BAIDU_MAP_CONFIG`)：设置百度地图API密钥
 - **DeepSeek AI配置** (`DEEPSEEK_CONFIG`)：设置DeepSeek AI的API密钥
-- **YOLO模型路径** (`MODEL_WEIGHTS`)：设置训练好的YOLO模型权重文件路径
+- **YOLO模型路径** (`MODEL_WEIGHTS`)：设置为 `'yolo/best.pt'`（使用项目包含的预训练模型）
 
-### 7. 准备YOLO模型
-
-- 如果有训练好的模型：将模型权重文件路径配置到 `config.py` 的 `MODEL_WEIGHTS` 中
-- 如果需要训练模型：使用自己的盲道数据集进行训练（基于ultralytics库）
+配置示例：
+```python
+# YOLO模型配置
+MODEL_WEIGHTS = 'yolo/best.pt'  # 使用项目包含的预训练模型
+```
 
 ## 🏃 运行应用
 
@@ -280,7 +304,12 @@ blind_navigation/
 │   ├── login.html
 │   ├── register.html
 │   └── forget_password.html
-└── uploads/              # 上传文件目录
+├── uploads/              # 上传文件目录
+└── yolo/                 # 预训练YOLO模型
+    ├── best.pt           # 模型权重（开箱即用！）
+    ├── results.png       # 训练结果可视化
+    ├── confusion_matrix.png  # 混淆矩阵
+    └── ...               # 其他训练指标
 ```
 
 ## 📄 开源协议
