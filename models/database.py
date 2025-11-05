@@ -1,0 +1,307 @@
+"""
+数据库操作模块 - 包含所有数据库相关函数
+"""
+import pymysql
+import hashlib
+from config import DB_CONFIG
+from utils.email_utils import verify_code
+
+
+def get_db_connection():
+    """创建数据库连接"""
+    try:
+        connection = pymysql.connect(
+            **DB_CONFIG,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        return connection
+    except Exception as e:
+        print(f"数据库连接错误: {e}")
+        return None
+
+
+def init_database():
+    """初始化数据库，创建必要的表"""
+    conn = get_db_connection()
+    if not conn:
+        print("无法连接到数据库，请检查数据库配置")
+        return False
+
+    try:
+        with conn.cursor() as cursor:
+            # 创建用户表，添加email字段
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    email VARCHAR(100) NOT NULL UNIQUE,
+                    phone VARCHAR(20),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME
+                )
+            ''')
+
+            # 创建用户设置表
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_settings (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    gender VARCHAR(10) DEFAULT '未指定',
+                    name VARCHAR(50) DEFAULT '用户',
+                    age VARCHAR(10) DEFAULT '未指定',
+                    voice_speed VARCHAR(10) DEFAULT '中等',
+                    voice_volume VARCHAR(10) DEFAULT '中等',
+                    user_mode VARCHAR(10) DEFAULT '盲人端',
+                    encourage VARCHAR(10) DEFAULT '开',
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            ''')
+
+        conn.commit()
+        print("数据库初始化成功")
+        return True
+    except Exception as e:
+        print(f"数据库初始化失败: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def register_user(username, password, email, verification_code, phone=None):
+    """注册新用户，增加验证码验证"""
+    # 验证邮箱验证码
+    code_valid, message = verify_code(email, verification_code)
+    if not code_valid:
+        return False, message
+
+    conn = get_db_connection()
+    if not conn:
+        return False, "数据库连接失败"
+
+    try:
+        # 密码加密
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        with conn.cursor() as cursor:
+            # 检查用户名是否已存在
+            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
+            if cursor.fetchone():
+                return False, "用户名已存在"
+
+            # 检查邮箱是否已存在
+            cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+            if cursor.fetchone():
+                return False, "该邮箱已被注册"
+
+            # 插入新用户
+            cursor.execute(
+                "INSERT INTO users (username, password, email, phone) VALUES (%s, %s, %s, %s)",
+                (username, password_hash, email, phone)
+            )
+
+            # 获取新用户ID
+            user_id = cursor.lastrowid
+
+            # 创建用户设置
+            cursor.execute(
+                "INSERT INTO user_settings (user_id) VALUES (%s)",
+                (user_id,)
+            )
+
+        conn.commit()
+        return True, "注册成功"
+    except Exception as e:
+        conn.rollback()
+        print(f"注册用户失败: {e}")
+        return False, f"注册失败: {str(e)}"
+    finally:
+        conn.close()
+
+
+def verify_user(username, password):
+    """验证用户登录"""
+    conn = get_db_connection()
+    if not conn:
+        return False, "数据库连接失败", None
+
+    try:
+        # 密码加密
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        with conn.cursor() as cursor:
+            # 查询用户
+            cursor.execute("SELECT id, username FROM users WHERE username = %s AND password = %s",
+                           (username, password_hash))
+            user = cursor.fetchone()
+
+            if not user:
+                return False, "用户名或密码错误", None
+
+            # 更新最后登录时间
+            cursor.execute("UPDATE users SET last_login = NOW() WHERE id = %s", (user['id'],))
+
+            # 获取用户设置
+            cursor.execute("SELECT * FROM user_settings WHERE user_id = %s", (user['id'],))
+            settings = cursor.fetchone()
+
+            if not settings:
+                # 如果没有设置，创建默认设置
+                cursor.execute("INSERT INTO user_settings (user_id) VALUES (%s)", (user['id'],))
+                cursor.execute("SELECT * FROM user_settings WHERE user_id = %s", (user['id'],))
+                settings = cursor.fetchone()
+
+        conn.commit()
+
+        # 将设置转换为应用中使用的格式
+        user_config = {
+            "id": user['id'],
+            "username": user['username'],
+            "gender": settings['gender'],
+            "name": settings['name'],
+            "age": settings['age'],
+            "voice_speed": settings['voice_speed'],
+            "voice_volume": settings['voice_volume'],
+            "user_mode": settings['user_mode'],
+            "encourage": settings['encourage']
+        }
+
+        return True, "登录成功", user_config
+    except Exception as e:
+        print(f"验证用户失败: {e}")
+        return False, f"登录失败: {str(e)}", None
+    finally:
+        conn.close()
+
+
+def update_user_settings_in_db(user_id, settings):
+    """更新数据库中的用户设置"""
+    conn = get_db_connection()
+    if not conn:
+        return False, "数据库连接失败"
+
+    try:
+        with conn.cursor() as cursor:
+            # 更新用户设置
+            cursor.execute("""
+                UPDATE user_settings 
+                SET gender = %s, name = %s, age = %s, 
+                    voice_speed = %s, voice_volume = %s, user_mode = %s, encourage = %s
+                WHERE user_id = %s
+                """,
+                           (settings["gender"], settings["name"], settings["age"],
+                            settings["voice_speed"], settings["voice_volume"], settings["user_mode"],
+                            settings["encourage"],
+                            user_id)
+                           )
+
+        conn.commit()
+        return True, "设置更新成功"
+    except Exception as e:
+        conn.rollback()
+        print(f"更新用户设置失败: {e}")
+        return False, f"设置更新失败: {str(e)}"
+    finally:
+        conn.close()
+
+
+def get_user_settings(user_id):
+    """从数据库获取用户设置"""
+    conn = get_db_connection()
+    if not conn:
+        return None, "数据库连接失败"
+    
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM user_settings WHERE user_id = %s", (user_id,))
+            settings_data = cursor.fetchone()
+            
+            if not settings_data:
+                return None, "找不到用户设置"
+            
+            return {
+                "gender": settings_data['gender'],
+                "name": settings_data['name'],
+                "age": settings_data['age'],
+                "voice_speed": settings_data['voice_speed'],
+                "voice_volume": settings_data['voice_volume'],
+                "user_mode": settings_data['user_mode'],
+                "encourage": settings_data['encourage']
+            }, "成功"
+    
+    except Exception as e:
+        print(f"获取用户设置失败: {e}")
+        return None, f"获取用户设置失败: {str(e)}"
+    finally:
+        conn.close()
+
+
+def get_user_details(user_id):
+    """获取用户详细信息"""
+    conn = get_db_connection()
+    if not conn:
+        return None, "数据库连接失败"
+
+    try:
+        with conn.cursor() as cursor:
+            # 查询用户详细信息
+            cursor.execute("""
+                SELECT username, email, phone, created_at, last_login
+                FROM users
+                WHERE id = %s
+            """, (user_id,))
+
+            user_info = cursor.fetchone()
+
+            if not user_info:
+                return None, "找不到用户信息"
+
+            # 格式化日期时间
+            created_at = user_info['created_at'].strftime('%Y-%m-%d %H:%M:%S') if user_info['created_at'] else "未知"
+            last_login = user_info['last_login'].strftime('%Y-%m-%d %H:%M:%S') if user_info['last_login'] else "未知"
+
+            return {
+                "username": user_info['username'],
+                "email": user_info['email'],
+                "phone": user_info['phone'] or "未设置",
+                "created_at": created_at,
+                "last_login": last_login
+            }, "成功"
+
+    except Exception as e:
+        print(f"获取用户信息失败: {e}")
+        return None, f"获取用户信息失败: {str(e)}"
+    finally:
+        conn.close()
+
+
+def update_password(email, new_password):
+    """根据邮箱更新密码"""
+    conn = get_db_connection()
+    if not conn:
+        return False, "数据库连接失败"
+
+    try:
+        password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        with conn.cursor() as cursor:
+            # 查询用户是否存在
+            cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+            user = cursor.fetchone()
+
+            if not user:
+                return False, "该邮箱未注册"
+
+            # 更新密码
+            cursor.execute(
+                "UPDATE users SET password = %s WHERE email = %s",
+                (password_hash, email)
+            )
+            conn.commit()
+            return True, "密码重置成功"
+    except Exception as e:
+        conn.rollback()
+        print(f"密码重置失败: {e}")
+        return False, f"密码重置失败: {str(e)}"
+    finally:
+        conn.close()
+
