@@ -28,7 +28,7 @@ ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
 MAX_CONTENT_LENGTH = 300 * 1024 * 1024  # 限制上传大小为300MB
 
 # YOLO模型配置
-MODEL_WEIGHTS = r"yolo/best.pt"  # 根据您存放的实际情况填写
+MODEL_WEIGHTS = 'yolo/best.pt'  # 使用项目包含的预训练YOLOv8盲道检测模型
 
 # 百度地图MCP配置
 BAIDU_MAP_CONFIG = {
@@ -60,5 +60,6 @@ DEFAULT_USER_SETTINGS = {
     "user_mode": "盲人端",  # 用户模式：盲人端/家属端
     "encourage": "开"  # 适当时给予鼓励：开/关
 }
+
 
 
