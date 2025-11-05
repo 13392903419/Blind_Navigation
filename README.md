@@ -1,183 +1,298 @@
-# Tactile Paving Navigation Assistant System
+# Blind Navigation - Tactile Paving Navigation Assistant System
 
-This is a Flask and YOLO model-based tactile paving navigation assistant system designed to help visually impaired people identify tactile paving and provide voice guidance.
+<div align="center">
 
-You can see the demonstration video at https://www.bilibili.com/video/BV1kD57zGE68.
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## Project Introduction
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Flask](https://img.shields.io/badge/Flask-3.0.0-green.svg)](https://flask.palletsprojects.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/wink-wink-wink555/blind_navigation.svg)](https://github.com/wink-wink-wink555/blind_navigation/stargazers)
 
-The Tactile Paving Navigation Assistant System is an innovative application combining computer vision and artificial intelligence, specially designed for the visually impaired. The system identifies changes in tactile paving direction through real-time video analysis technology and guides visually impaired people to walk correctly along the tactile paving through voice prompts. At the same time, the system also provides location sharing functionality, allowing family members to know the location of visually impaired people at any time, improving travel safety.
+</div>
 
-This project uses the YOLO (You Only Look Once) object detection algorithm, combined with a self-collected and annotated tactile paving dataset for training, which can accurately identify tactile paving and judge its extension direction. Through speech synthesis technology, the system conveys navigation information to users in a natural and friendly way.
+> 📹 Demo Video: https://www.bilibili.com/video/BV1kD57zGE68
 
-## Problems Solved
+## 🌟 Introduction
 
-This system mainly solves the following problems:
+Blind Navigation is an innovative AI-powered navigation system designed for visually impaired individuals. It combines computer vision and artificial intelligence to identify tactile paving (guide paths) through real-time video analysis and provides intelligent voice guidance. The system also includes location sharing, AI map assistant, and other features to enhance travel safety and independence.
 
-1. **Tactile Paving Recognition and Navigation**: Through real-time video analysis, it identifies the position and direction changes of tactile paving, helping visually impaired people walk safely along the tactile paving.
+### Tech Stack
 
-2. **Real-time Voice Feedback**: When a change in tactile paving direction is detected, it automatically provides voice prompts, allowing visually impaired people to adjust their direction of travel in a timely manner.
+- **Frontend**: HTML5, CSS3, Vanilla JavaScript
+- **Backend**: Flask (Python 3.8+)
+- **AI Models**:
+  - YOLO (You Only Look Once) - Tactile paving detection
+  - Ollama (Qwen2.5:3b) - Personalized voice prompt generation
+  - DeepSeek AI - Intelligent dialogue and route planning
+- **Database**: MySQL
+- **Third-party Services**:
+  - Baidu Map API - Location services and route planning
+  - Edge TTS / pyttsx3 - Text-to-speech synthesis
 
-3. **Safety Monitoring**: Through the location sharing function, family members can remotely monitor the location of visually impaired people and provide help when needed.
+## 🎯 Problems Solved
 
-4. **Personalized Experience**: Provides customization of voice speed, volume, and other parameters to meet the needs of different users.
+This system addresses the following challenges:
 
-5. **Digital Divide**: Reduces barriers for visually impaired people to use modern urban facilities, improving self-care ability and travel convenience.
+1. **Tactile Paving Recognition & Navigation**: Real-time video analysis to identify tactile paving position and direction changes, helping visually impaired individuals walk safely
 
-## Feature Highlights
+2. **Real-time Voice Feedback**: Automatically provides personalized AI voice prompts when tactile paving direction changes are detected
 
-- Real-time Video Analysis: Uses YOLO model to identify tactile paving in real-time
-- Voice Feedback: Provides real-time voice prompts
-- Personalized Voice Generation: Uses ollama-qwen2.5:3b model to generate customized navigation prompts based on user's preferred name or nickname
-- User System: Includes registration, login, and password recovery functions
-- Location Sharing: Supports location sharing, making it convenient for family members to know the location of visually impaired people
-- User Settings: Customizable voice speed, volume, and other parameters
+3. **Intelligent Map Assistant**: Integrates DeepSeek AI and Baidu Map API for intelligent Q&A, location queries, route planning, and more
 
-## Installation Requirements
+4. **Safety Monitoring**: Location sharing allows family members to remotely view the location of visually impaired individuals
+
+5. **Personalized Experience**: Customizable voice speed, volume, address preferences, and other parameters
+
+6. **Accessibility Design**: Reduces barriers for visually impaired individuals to use modern urban facilities
+
+## ✨ Key Features
+
+- 🎥 **Real-time Video Analysis**: Uses YOLO model for real-time tactile paving detection
+- 🔊 **Intelligent Voice Feedback**: Uses Ollama (qwen2.5:3b) to generate personalized, context-aware voice prompts based on user profile (age, gender, name, preferences)
+- 🤖 **AI Map Assistant**: Natural language interaction using DeepSeek AI, supports location queries, route planning, nearby searches, etc.
+- 👤 **User System**: Complete registration, login, and password recovery functionality
+- 📍 **Location Sharing**: Real-time location sharing for family members
+- ⚙️ **Personalized Settings**: Customizable voice speed, volume, gender, age group, address preferences, etc.
+- 🎯 **Dual Mode**: Supports both visually impaired user mode and family member mode
+
+### How Ollama Powers Navigation
+
+When the system detects a change in tactile paving direction (left or right turn), it uses the Ollama qwen2.5:3b model to generate natural, personalized voice prompts. The AI considers:
+- User's preferred name or nickname
+- Age group (youth/middle-aged/senior) for appropriate tone
+- Gender for voice selection
+- Encouragement settings to provide motivational feedback
+- Previous context to avoid repetitive messages
+
+This creates a more human-like and engaging experience compared to static, pre-recorded messages.
+
+## 📋 Requirements
 
 - Python 3.8+
-- MySQL database
+- MySQL Database
 - Ollama with qwen2.5:3b model installed
-- Necessary Python libraries (see requirements.txt)
+- YOLO model weights file (requires training or using provided model)
+- Required Python libraries (see installation steps below)
 
-## Installation Steps
+## 🚀 Installation
 
-1. Clone the repository to your local machine:
+### 1. Clone Repository
+
 ```bash
 git clone https://github.com/wink-wink-wink555/blind_navigation.git
 cd blind_navigation
 ```
 
-2. Create and activate a virtual environment (optional but recommended):
+### 2. Create Virtual Environment (Recommended)
+
 ```bash
+# Create virtual environment
 python -m venv venv
+
 # Windows
 venv\Scripts\activate
+
 # Linux/Mac
 source venv/bin/activate
 ```
 
-3. Install dependencies:
+### 3. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Install Ollama and the qwen2.5:3b model:
+Or install packages individually:
+
 ```bash
-# Follow instructions at https://ollama.com/ to install Ollama
-# Then run the qwen2.5:3b model (or install if there's no such model)
-ollama run qwen2.5:3b
+pip install flask pymysql ultralytics ollama numpy pyttsx3 geopy Pillow edge-tts requests opencv-python Werkzeug
 ```
 
-5. Set up the database:
-   - Create MySQL database: blind_navigation
-   - The application will automatically create the required tables when it is first run
+### 4. Install and Configure Ollama
 
-6. Modify the configuration:
-   - Update the database configuration (DB_CONFIG) in app.py
-   - Update the email sending configuration (EMAIL_CONFIG)
+Install Ollama and pull the qwen2.5:3b model:
 
-## Running the Application
+```bash
+# Visit https://ollama.com/ to download and install Ollama for your OS
+
+# After installation, pull the qwen2.5:3b model
+ollama pull qwen2.5:3b
+
+# Verify the model is installed
+ollama list
+```
+
+Make sure Ollama service is running on `http://localhost:11434` (default port).
+
+### 5. Database Setup
+
+Create MySQL database:
+
+```sql
+CREATE DATABASE blind_navigation CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+The application will automatically create required tables on first run.
+
+### 6. Configuration
+
+Modify configuration in `config.py` (copy from `config.example.py`):
+
+- **Database Config** (`DB_CONFIG`): Set MySQL host, user, password, etc.
+- **Email Config** (`EMAIL_CONFIG`): Configure QQ email SMTP service (for verification codes)
+- **Baidu Map Config** (`BAIDU_MAP_CONFIG`): Set Baidu Map API key
+- **DeepSeek AI Config** (`DEEPSEEK_CONFIG`): Set DeepSeek AI API key
+- **YOLO Model Path** (`MODEL_WEIGHTS`): Set path to trained YOLO model weights
+
+### 7. Prepare YOLO Model
+
+- If you have a trained model: Configure the model weights file path in `config.py` under `MODEL_WEIGHTS`
+- If you need to train a model: Use your own tactile paving dataset for training (based on ultralytics library)
+
+## 🏃 Running the Application
 
 ```bash
 python app.py
 ```
 
-The application will run at http://127.0.0.1:5000/.
+The application will run at http://127.0.0.1:5000/
 
-## Usage Instructions
-
-1. Register/Login: You need to register an account for first-time use
-2. Upload Video: You can upload a video file for analysis or use the camera for real-time analysis
-3. Set Parameters: Adjust voice prompt parameters according to personal needs
-4. Location Sharing: Share location with family members
-
-## User Guide
+## 📖 Usage Guide
 
 ### 1. Account Management
 
-#### Register an Account
-1. Visit the system home page and click the "Register" button
-2. Fill in username, password, email, and other information
-3. Click the "Get Verification Code" button, and the system will send a verification code to your email
-4. Enter the received verification code to complete registration
+#### Register Account
+1. Visit system homepage and click "Register"
+2. Fill in username, password, email, etc.
+3. Click "Get Verification Code" - system will send code to your email
+4. Enter received verification code to complete registration
 
-#### Login to the System
-1. Enter your username and password
-2. Click the "Login" button to enter the system
-3. If you forget your password, you can click "Forgot Password" to reset it
+#### Login
+1. Enter username and password
+2. Click "Login" to access the system
+3. Click "Forgot Password" to reset if needed
 
 ### 2. Tactile Paving Navigation
 
 #### Video Analysis
-1. Click the "Upload Video" button and select the video file to be analyzed
-2. The system will automatically start analyzing the tactile paving in the video
-3. When a change in tactile paving direction is detected, the system will automatically play a voice prompt
+1. Click "Upload Video" and select video file for analysis
+2. System automatically analyzes tactile paving in the video
+3. Voice prompts play automatically when tactile paving direction changes are detected
 
 #### Real-time Navigation
-1. Fix your mobile phone or tablet device in an appropriate position to ensure that the camera can capture the tactile paving in front
-2. Click the "Start Navigation" button
-3. The system will analyze the camera image in real-time and provide voice navigation guidance
+1. Mount your phone or tablet to ensure camera can capture the tactile paving ahead
+2. Click "Start Navigation"
+3. System analyzes camera feed in real-time and provides voice navigation guidance
 
-### 3. Location Sharing
+### 3. AI Map Assistant
+
+#### Using AI Assistant
+1. Click "Map" tab on main interface
+2. Enter your question in the input box, for example:
+   - "Coordinates of Tiananmen Square"
+   - "What convenience stores are near me?"
+   - "How to get from Beijing Railway Station to Tiananmen Square?"
+3. Click "Ask" button - AI assistant analyzes question and calls map services
+4. System responds in natural language
+
+### 4. Location Sharing
 
 #### Share Location
-1. Click the "Location Sharing" button on the main interface
-2. Authorize the system to access location information
-3. Select the family member account with which you want to share your location
-4. Click the "Start Sharing" button
+1. Click "Location Sharing" button on main interface
+2. Authorize system to access location information
+3. Select family member account to share with
+4. Click "Start Sharing"
 
 #### View Location
-1. Login to the system with a family member account
-2. Click the "View Location" button on the main interface
-3. The system will display a map interface, marking the real-time location of the visually impaired person
+1. Login with family member account
+2. Click "View Location" on main interface
+3. System displays map interface with real-time location marker
 
-### 4. System Settings
+### 5. System Settings
 
-#### Voice Settings
-1. Click the "Settings" button on the main interface
-2. Adjust voice speed, volume, and other parameters
-3. Set your preferred name or nickname for personalized voice prompts
-4. Click the "Test Voice" button to preview the effect
-5. Click the "Save Settings" button to save the changes
+#### Personalized Settings
+1. Click "Settings" button on main interface
+2. Adjust the following parameters:
+   - **Gender**: Male/Female/Not specified
+   - **Name**: Set preferred name or how you'd like to be addressed
+   - **Age Group**: Youth/Middle-aged/Senior/Not specified
+   - **Voice Speed**: Slow/Medium/Fast
+   - **Voice Volume**: Low/Medium/High
+   - **User Mode**: Visually impaired user/Family member
+   - **Encouragement**: On/Off (provides encouragement when appropriate)
+3. Click "Test Voice" to preview
+4. Click "Save Settings" to save changes
 
-#### Personalized Voice Prompts
-1. Navigate to the "Voice Personalization" section in Settings
-2. Enter your preferred name, nickname, or how you would like to be addressed
-3. Select voice tone and style preferences
-4. The system will use ollama-qwen2.5:3b model to generate customized navigation prompts that address you by your preferred name
-5. You can preview different prompt styles before saving your preferences
+## ⚠️ Notes
 
-## Notes
+- **Ollama service must be running** for personalized voice prompt generation
+- Email configuration required for verification code functionality
+- Model recognition quality depends on training data quality
+- Ensure camera permissions are enabled when using camera
+- Location sharing requires GPS permissions
+- DeepSeek AI functionality requires valid API key
+- Baidu Map functionality requires valid API key
 
-- This system needs to configure email to support the verification code function
-- The model recognition effect depends on the quality of the training data
-- Please ensure that camera permissions are enabled (when using the camera)
-- The location sharing function requires GPS permissions
-- Personalized voice generation requires Ollama with qwen2.5:3b model to be running locally or on an accessible server
-
-## Contact Information
+## 📧 Contact
 
 - **Email**: yfsun.jeff@gmail.com
 - **GitHub**: [wink-wink-wink555](https://github.com/wink-wink-wink555)
 - **LinkedIn**: [Yifei Sun](https://www.linkedin.com/in/yifei-sun-0bab66341/)
 - **Bilibili**: [NO_Desire](https://space.bilibili.com/623490717)
 
-## Special Thanks
+## 🙏 Acknowledgments
 
-Special thanks to the following members for helping with the collection of tactile paving datasets and participating in annotation and training work:
+Special thanks to the following members for their help with tactile paving dataset collection, annotation, and training:
 - [Chen Xingyu](https://github.com/guangxiangdebizi)
-- Wang youyi
+- Wang Youyi
 - Liu Yiheng
 - Cai Yuxin
 - Zhang Chenshu
 
-## License
+## 📁 Project Structure
+
+```
+blind_navigation/
+├── app.py                 # Flask application main file
+├── config.py              # Configuration file
+├── models/                # Database models
+│   ├── __init__.py
+│   └── database.py        # Database operations
+├── routes/                # Route blueprints
+│   ├── __init__.py
+│   ├── auth.py           # Authentication routes
+│   ├── main.py           # Main page routes
+│   ├── video.py          # Video processing routes
+│   └── map.py            # Map-related routes
+├── services/              # Business services
+│   ├── __init__.py
+│   ├── baidu_map_mcp.py  # Baidu Map services
+│   └── deepseek_ai.py    # DeepSeek AI services
+├── utils/                 # Utility functions
+│   ├── __init__.py
+│   ├── decorators.py     # Decorators
+│   ├── email_utils.py    # Email utilities
+│   ├── video_utils.py    # Video processing utilities
+│   └── voice_utils.py    # Voice utilities
+├── templates/             # HTML templates
+│   ├── index.html
+│   ├── login.html
+│   ├── register.html
+│   └── forget_password.html
+└── uploads/              # Upload directory
+```
+
+## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2025 wink-wink-wink555
 
-This means you are free to use, modify, and distribute this software, whether for personal or commercial purposes, provided that the above copyright notice and permission notice are included in all copies.
+You are free to use, modify, and distribute this software for personal or commercial purposes, provided that the copyright notice and permission notice are included in all copies.
 
-For detailed terms, please refer to the [LICENSE](LICENSE) file. 
+For detailed terms, please refer to the [LICENSE](LICENSE) file.
+
+---
+
+⭐ If this project helps you, please give it a star!
