@@ -80,8 +80,6 @@
 
 您可以直接使用这个模型，无需进行任何额外的训练。该模型在自定义盲道数据集上训练，在检测盲道图案和方向变化方面具有很高的准确性。
 
-**GitHub上传提示**：如果模型文件（`yolo/best.pt`）超过100MB，您可能需要使用 [Git LFS](https://git-lfs.github.com/) 来上传到GitHub，或者在README中提供下载链接。
-
 ## 📋 环境要求
 
 - Python 3.8+
@@ -325,4 +323,5 @@ Copyright (c) 2025 wink-wink-wink555
 ---
 
 ⭐ 如果这个项目对您有帮助，欢迎给个Star！
+
 
