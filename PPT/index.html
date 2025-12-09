@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基于计算机视觉与大型语言模型的视障人士出行辅助系统</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- 进度指示器 -->
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <!-- 页码指示器 -->
+    <div class="page-indicator" id="pageIndicator">
+        <span class="current-page">1</span>/<span class="total-pages">15</span>
+    </div>
+
+    <!-- 导航按钮 -->
+    <div class="nav-buttons">
+        <button class="nav-btn prev-btn" id="prevBtn" title="上一页 (←)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 18l-6-6 6-6"/>
+            </svg>
+        </button>
+        <button class="nav-btn next-btn" id="nextBtn" title="下一页 (→)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18l6-6-6-6"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 幻灯片容器 -->
+    <div class="slides-container" id="slidesContainer">
+        
+        <!-- 第1页：封面 -->
+        <section class="slide slide-cover active" data-slide="1">
+            <div class="slide-bg-animation"></div>
+            <div class="glass-card cover-card">
+                <div class="intel-badge">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/7/7d/Intel_logo_%282006-2020%29.svg" alt="Intel" class="intel-logo">
+                    <span>Intel AI Platform</span>
+                </div>
+                <h1 class="main-title">
+                    <span class="gradient-text">基于计算机视觉与大型语言模型的</span>
+                    <span class="gradient-text-sub">视障人士出行辅助系统</span>
+                </h1>
+                <p class="tagline">基于英特尔酷睿平台 + IPEX-LLM优化的智能视觉辅助出行方案</p>
+                <div class="tech-badges">
+                    <span class="badge"><i class="icon-chip"></i> Intel Core</span>
+                    <span class="badge"><i class="icon-ai"></i> IPEX-LLM Ollama</span>
+                    <span class="badge"><i class="icon-model"></i> YOLOv8 + Qwen2.5:3b</span>
+                </div>
+                <div class="team-info">
+                    <p class="team-members">团队成员：孙宜飞、陈星宇、张凯、沈乾、盛晟</p>
+                </div>
+            </div>
+            <div class="floating-elements">
+                <div class="float-circle c1"></div>
+                <div class="float-circle c2"></div>
+                <div class="float-circle c3"></div>
+            </div>
+        </section>
+
+        <!-- 第2页：市场痛点 -->
+        <section class="slide slide-pain" data-slide="2">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">01</span>
+                    <h2 class="slide-title">市场痛点</h2>
+                </div>
+                <div class="pain-content">
+                    <div class="pain-grid">
+                        <div class="glass-card pain-card">
+                            <div class="pain-icon">👁️</div>
+                            <h3>视障群体庞大</h3>
+                            <p>中国视障人士超<strong>1700万</strong>，出行是最大难题</p>
+                            <div class="stat-bar">
+                                <div class="stat-fill" style="width: 85%"></div>
+                            </div>
+                        </div>
+                        <div class="glass-card pain-card">
+                            <div class="pain-icon">📵</div>
+                            <h3>缺乏联络机制</h3>
+                            <p>视障人士与家属间<strong>缺少位置共享和实时沟通</strong>渠道</p>
+                            <div class="stat-bar">
+                                <div class="stat-fill" style="width: 80%"></div>
+                            </div>
+                        </div>
+                        <div class="glass-card pain-card">
+                            <div class="pain-icon">🦯</div>
+                            <h3>传统辅助有限</h3>
+                            <p>导盲犬数量<strong>不足200只</strong>，盲杖功能单一</p>
+                            <div class="stat-bar">
+                                <div class="stat-fill" style="width: 95%"></div>
+                            </div>
+                        </div>
+                        <div class="glass-card pain-card">
+                            <div class="pain-icon">📱</div>
+                            <h3>现有方案不足</h3>
+                            <p>导航软件<strong>缺乏盲道识别</strong>，无法提供精准引导</p>
+                            <div class="stat-bar">
+                                <div class="stat-fill" style="width: 70%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="solution-hint glass-card">
+                        <div class="hint-icon">💡</div>
+                        <div class="hint-content">
+                            <h4>我们的方案</h4>
+                            <p>基于<strong>英特尔酷睿平台 + IPEX-LLM优化的Ollama</strong>，实现：</p>
+                            <ul>
+                                <li>🎥 实时视频分析 - YOLO识别盲道</li>
+                                <li>🔊 AI个性化语音 - Qwen2.5生成导航提示</li>
+                                <li>🗺️ 智能地图助手 - DeepSeek AI + 百度地图MCP</li>
+                                <li>📍 位置共享 - 家属实时了解位置</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第3页：系统架构总览 -->
+        <section class="slide slide-arch" data-slide="3">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">02</span>
+                    <h2 class="slide-title">系统架构总览</h2>
+                </div>
+                <div class="arch-content">
+                    <div class="arch-diagram">
+                        <div class="arch-layer layer-frontend glass-card">
+                            <h4>🖥️ 前端展示层</h4>
+                            <div class="layer-items">
+                                <span class="item">HTML5/CSS3/JavaScript</span>
+                                <span class="item">实时视频流显示</span>
+                                <span class="item">百度地图可视化</span>
+                            </div>
+                            <div class="layer-files">📁 templates/*.html</div>
+                        </div>
+                        <div class="arch-arrow">↓</div>
+                        <div class="arch-layer layer-backend glass-card">
+                            <h4>⚙️ 业务逻辑层 (Flask)</h4>
+                            <div class="layer-items">
+                                <span class="item">routes/auth.py - 用户认证</span>
+                                <span class="item">routes/video.py - 视频处理</span>
+                                <span class="item">routes/map.py - 地图服务</span>
+                            </div>
+                            <div class="layer-files">📁 routes/, services/, utils/</div>
+                        </div>
+                        <div class="arch-arrow">↓</div>
+                        <div class="arch-layer layer-ai glass-card highlight">
+                            <h4>🔥 AI推理层（Intel优化）</h4>
+                            <div class="layer-items">
+                                <span class="item intel">IPEX-LLM Ollama</span>
+                                <span class="item intel">Qwen2.5:3b 语音生成</span>
+                                <span class="item">YOLOv8 盲道检测</span>
+                                <span class="item">DeepSeek AI Agent</span>
+                            </div>
+                            <div class="layer-files">📁 yolo/best.pt, services/deepseek_ai.py</div>
+                        </div>
+                        <div class="arch-arrow">↓</div>
+                        <div class="arch-layer layer-data glass-card">
+                            <h4>💾 数据与外部服务层</h4>
+                            <div class="layer-items">
+                                <span class="item">MySQL - 用户数据</span>
+                                <span class="item">百度地图API</span>
+                                <span class="item">百度地图MCP</span>
+                            </div>
+                            <div class="layer-files">📁 models/database.py, services/baidu_map_mcp.py</div>
+                        </div>
+                    </div>
+                    <div class="arch-features">
+                        <div class="feature-item glass-card">
+                            <span class="feature-value">实时</span>
+                            <span class="feature-label">盲道识别</span>
+                        </div>
+                        <div class="feature-item glass-card">
+                            <span class="feature-value">本地</span>
+                            <span class="feature-label">LLM推理</span>
+                        </div>
+                        <div class="feature-item glass-card">
+                            <span class="feature-value">个性化</span>
+                            <span class="feature-label">语音播报</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第4页：双端口设计 -->
+        <section class="slide slide-dual-port" data-slide="4">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">03</span>
+                    <h2 class="slide-title">双端口设计</h2>
+                </div>
+                <div class="dual-port-content">
+                    <div class="dual-port-intro glass-card">
+                        <p class="intro-text">系统采用<strong>盲人端 + 家属端</strong>双端设计，满足视障人士独立出行与家属远程关怀的双重需求</p>
+                    </div>
+                    
+                    <div class="dual-port-grid">
+                        <!-- 盲人端 -->
+                        <div class="port-card glass-card blind-port">
+                            <div class="port-header">
+                                <span class="port-icon">🦯</span>
+                                <h3>盲人端</h3>
+                                <span class="port-device">导盲杖 / 导盲犬</span>
+                            </div>
+                            <div class="port-features">
+                                <div class="port-feature">
+                                    <span class="feature-icon">🎥</span>
+                                    <div class="feature-detail">
+                                        <h4>实时视频分析</h4>
+                                        <p>YOLO检测盲道方向，生成转向提示</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">🔊</span>
+                                    <div class="feature-detail">
+                                        <h4>个性化语音导航</h4>
+                                        <p>Qwen2.5根据用户设置生成亲切提示语</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">📩</span>
+                                    <div class="feature-detail">
+                                        <h4>接收家属消息</h4>
+                                        <p>"您有一条来自家属的消息：..."</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">🗺️</span>
+                                    <div class="feature-detail">
+                                        <h4>AI地图助手</h4>
+                                        <p>语音询问附近地点、路线规划</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="port-code">
+                                <code>user_mode: "盲人端"</code>
+                            </div>
+                        </div>
+
+                        <!-- 家属端 -->
+                        <div class="port-card glass-card family-port">
+                            <div class="port-header">
+                                <span class="port-icon">👨‍👩‍👧</span>
+                                <h3>家属端</h3>
+                                <span class="port-device">手机 APP</span>
+                            </div>
+                            <div class="port-features">
+                                <div class="port-feature">
+                                    <span class="feature-icon">📍</span>
+                                    <div class="feature-detail">
+                                        <h4>实时位置获取</h4>
+                                        <p>通过update_location API获取视障人士位置</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">💬</span>
+                                    <div class="feature-detail">
+                                        <h4>发送语音消息</h4>
+                                        <p>消息自动转语音播放给盲人端</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">📺</span>
+                                    <div class="feature-detail">
+                                        <h4>查看实时画面</h4>
+                                        <p>远程监控视障人士当前环境</p>
+                                    </div>
+                                </div>
+                                <div class="port-feature">
+                                    <span class="feature-icon">🔔</span>
+                                    <div class="feature-detail">
+                                        <h4>安全状态监控</h4>
+                                        <p>位置过期提醒，及时掌握动态</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="port-code">
+                                <code>user_mode: "家属端"</code>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dual-port-api glass-card">
+                        <h4>🔗 核心API实现</h4>
+                        <div class="api-grid">
+                            <div class="api-item">
+                                <code>/send_message</code>
+                                <span>家属发送消息→盲人端语音播报</span>
+                            </div>
+                            <div class="api-item">
+                                <code>/update_location</code>
+                                <span>盲人端上报位置</span>
+                            </div>
+                            <div class="api-item">
+                                <code>/get_location/{user_id}</code>
+                                <span>家属端获取位置</span>
+                            </div>
+                            <div class="api-item">
+                                <code>/video_feed</code>
+                                <span>实时视频流传输</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第5页：技术栈总览 -->
+        <section class="slide slide-tech" data-slide="5">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">04</span>
+                    <h2 class="slide-title">技术栈总览</h2>
+                </div>
+                <div class="tech-content">
+                    <div class="tech-category">
+                        <h3 class="category-title">
+                            <span class="category-icon">🖥️</span>
+                            硬件平台
+                        </h3>
+                        <div class="tech-items">
+                            <div class="tech-item glass-card intel-highlight">
+                                <div class="tech-logo">
+                                    <img src="https://upload.wikimedia.org/wikipedia/commons/7/7d/Intel_logo_%282006-2020%29.svg" alt="Intel">
+                                </div>
+                                <div class="tech-info">
+                                    <h4>Intel Core 酷睿处理器</h4>
+                                    <p>高性能CPU，支持AVX-512指令集加速AI推理</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tech-category">
+                        <h3 class="category-title">
+                            <span class="category-icon">🤖</span>
+                            AI框架（Intel优化）
+                        </h3>
+                        <div class="tech-items three-cols">
+                            <div class="tech-item glass-card intel-highlight">
+                                <div class="tech-logo emoji">🦙</div>
+                                <div class="tech-info">
+                                    <h4>Ollama IPEX-LLM</h4>
+                                    <p>英特尔优化版Ollama</p>
+                                    <p>加速本地大模型推理</p>
+                                </div>
+                            </div>
+                            <div class="tech-item glass-card intel-highlight">
+                                <div class="tech-logo emoji">🧠</div>
+                                <div class="tech-info">
+                                    <h4>Qwen2.5:3b</h4>
+                                    <p>通义千问大模型</p>
+                                    <p>个性化语音生成</p>
+                                </div>
+                            </div>
+                            <div class="tech-item glass-card">
+                                <div class="tech-logo emoji">🎯</div>
+                                <div class="tech-info">
+                                    <h4>YOLOv8 (Ultralytics)</h4>
+                                    <p>自定义训练盲道检测模型</p>
+                                    <p>团队自采集数据集</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tech-category">
+                        <h3 class="category-title">
+                            <span class="category-icon">🗺️</span>
+                            地图与AI Agent
+                        </h3>
+                        <div class="tech-items two-cols">
+                            <div class="tech-item glass-card">
+                                <div class="tech-logo emoji">📍</div>
+                                <div class="tech-info">
+                                    <h4>百度地图API + MCP</h4>
+                                    <p>地图可视化、路线规划、POI搜索</p>
+                                    <p>Model Context Protocol工具协议</p>
+                                </div>
+                            </div>
+                            <div class="tech-item glass-card">
+                                <div class="tech-logo emoji">🤖</div>
+                                <div class="tech-info">
+                                    <h4>DeepSeek AI Agent</h4>
+                                    <p>ReAct模式理解用户意图</p>
+                                    <p>迭代调用MCP工具链</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tech-category">
+                        <h3 class="category-title">
+                            <span class="category-icon">💻</span>
+                            开发框架
+                        </h3>
+                        <div class="tech-items horizontal">
+                            <div class="tech-badge glass-card"><span class="badge-icon">🐍</span><span>Python 3.8+</span></div>
+                            <div class="tech-badge glass-card"><span class="badge-icon">🌶️</span><span>Flask</span></div>
+                            <div class="tech-badge glass-card"><span class="badge-icon">🗄️</span><span>MySQL</span></div>
+                            <div class="tech-badge glass-card"><span class="badge-icon">📷</span><span>OpenCV</span></div>
+                            <div class="tech-badge glass-card"><span class="badge-icon">🔊</span><span>pyttsx3</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第6页：YOLO盲道检测详解 -->
+        <section class="slide slide-core" data-slide="6">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">05</span>
+                    <h2 class="slide-title">YOLO盲道检测详解</h2>
+                </div>
+                <div class="core-detail-content">
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">📸</span>
+                            <h3>数据集构建（完全自主）</h3>
+                        </div>
+                        <div class="section-body">
+                            <div class="process-flow">
+                                <div class="process-step">
+                                    <div class="step-num">1</div>
+                                    <div class="step-content">
+                                        <h4>数据采集</h4>
+                                        <p>团队成员实地拍摄盲道照片/视频</p>
+                                        <p>覆盖：直行、左转、右转场景</p>
+                                    </div>
+                                </div>
+                                <div class="process-step">
+                                    <div class="step-num">2</div>
+                                    <div class="step-content">
+                                        <h4>人工标注</h4>
+                                        <p>使用标注工具精确标注盲道边界框</p>
+                                        <p>高质量标签确保模型精度</p>
+                                    </div>
+                                </div>
+                                <div class="process-step">
+                                    <div class="step-num">3</div>
+                                    <div class="step-content">
+                                        <h4>数据增强</h4>
+                                        <p>旋转、缩放、亮度调整等</p>
+                                        <p>提升模型鲁棒性</p>
+                                    </div>
+                                </div>
+                                <div class="process-step">
+                                    <div class="step-num">4</div>
+                                    <div class="step-content">
+                                        <h4>模型训练</h4>
+                                        <p>基于YOLOv8框架训练</p>
+                                        <p>输出：yolo/best.pt</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">📐</span>
+                            <h3>斜率阈值方向判别算法</h3>
+                            <span class="file-tag">routes/video.py</span>
+                        </div>
+                        <div class="section-body">
+                            <p class="algo-desc">当检测到<strong>≥2个盲道标记</strong>时，通过计算检测框中心点的斜率判断行进方向：</p>
+                            <div class="code-block">
+                                <pre><code><span class="comment"># 提取所有检测框的中心点坐标</span>
+<span class="keyword">for</span> result <span class="keyword">in</span> results:
+    boxes = result.boxes
+    <span class="keyword">for</span> box <span class="keyword">in</span> boxes:
+        x1, y1, x2, y2 = box.xyxy[<span class="number">0</span>]
+        center_x = (x1 + x2) / <span class="number">2</span>
+        center_y = (y1 + y2) / <span class="number">2</span>
+        centers.append((center_x, center_y))
+
+<span class="comment"># 使用numpy线性拟合计算斜率</span>
+ys = np.array([c[<span class="number">1</span>] <span class="keyword">for</span> c <span class="keyword">in</span> centers])
+xs = np.array([c[<span class="number">0</span>] <span class="keyword">for</span> c <span class="keyword">in</span> centers])
+<span class="variable">slope</span>, intercept = np.polyfit(ys, xs, <span class="number">1</span>)
+
+<span class="comment"># 根据斜率阈值判断方向 (THRESHOLD_SLOPE = 0.41)</span>
+<span class="keyword">if</span> slope < -THRESHOLD_SLOPE:
+    direction = <span class="string">"左转"</span>  <span class="comment"># 斜率显著为负</span>
+<span class="keyword">elif</span> slope > THRESHOLD_SLOPE:
+    direction = <span class="string">"右转"</span>  <span class="comment"># 斜率显著为正</span>
+<span class="keyword">else</span>:
+    direction = <span class="string">"直行"</span>  <span class="comment"># 斜率接近0</span></code></pre>
+                            </div>
+                            <div class="algo-params">
+                                <div class="param-item">
+                                    <span class="param-name">THRESHOLD_SLOPE</span>
+                                    <span class="param-value">0.41</span>
+                                    <span class="param-desc">方向判断阈值</span>
+                                </div>
+                                <div class="param-item">
+                                    <span class="param-name">CALL_INTERVAL</span>
+                                    <span class="param-value">14秒</span>
+                                    <span class="param-desc">语音提示间隔</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">📊</span>
+                            <h3>训练成果</h3>
+                            <span class="file-tag">yolo/</span>
+                        </div>
+                        <div class="section-body">
+                            <div class="training-results">
+                                <div class="result-item">
+                                    <span class="result-file">📄 best.pt</span>
+                                    <span class="result-desc">训练好的模型权重</span>
+                                </div>
+                                <div class="result-item">
+                                    <span class="result-file">📈 results.csv</span>
+                                    <span class="result-desc">训练指标数据</span>
+                                </div>
+                                <div class="result-item">
+                                    <span class="result-file">📊 confusion_matrix.png</span>
+                                    <span class="result-desc">混淆矩阵</span>
+                                </div>
+                                <div class="result-item">
+                                    <span class="result-file">📉 PR_curve.png</span>
+                                    <span class="result-desc">精确率-召回率曲线</span>
+                                </div>
+                                <div class="result-item">
+                                    <span class="result-file">📉 F1_curve.png</span>
+                                    <span class="result-desc">F1分数曲线</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第7页：大模型上下文工程 -->
+        <section class="slide slide-core-llm" data-slide="7">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">06</span>
+                    <h2 class="slide-title">大模型上下文工程</h2>
+                </div>
+                <div class="core-detail-content">
+                    <div class="core-section glass-card intel-glow">
+                        <div class="section-header">
+                            <span class="section-icon">🦙</span>
+                            <h3>Ollama + Qwen2.5:3b 个性化语音生成</h3>
+                            <span class="intel-tag">Intel IPEX-LLM</span>
+                        </div>
+                        <div class="section-body">
+                            <p class="section-intro">使用<strong>英特尔IPEX-LLM优化版Ollama</strong>本地运行Qwen2.5:3b大模型，通过精心设计的<strong>上下文工程</strong>生成个性化导航语音：</p>
+                            
+                            <div class="code-block">
+                                <div class="code-title">📝 Prompt模板生成 <span class="file-tag">utils/voice_utils.py - get_prompt_template()</span></div>
+                                <pre><code><span class="keyword">def</span> <span class="function">get_prompt_template</span>(user_settings):
+    gender_term = <span class="string">"先生"</span> <span class="keyword">if</span> user_settings[<span class="string">"gender"</span>] == <span class="string">"男"</span> <span class="keyword">else</span> <span class="string">"女士"</span>
+    age_term = {<span class="string">"老年"</span>: <span class="string">"年长的"</span>, <span class="string">"青年"</span>: <span class="string">"年轻的"</span>}.get(user_settings[<span class="string">"age"</span>], <span class="string">""</span>)
+    
+    prompt = <span class="string">f'''
+你是一个服务于盲人行走的语音导航小助手。
+你的用户是{age_term}{user_settings["name"]}{gender_term}。
+
+重要要求：
+1. 在回复时，你必须明确称呼用户的名字"{user_settings["name"]}{gender_term}"
+2. 你必须说清楚盲道转向方位（左？右？）
+3. 你的语气要温柔、亲切且充满元气
+4. 回复要简短明了，便于盲人快速理解
+5. 注意：盲人因为看不见路面，需要你清晰准确的提示
+'''</span>
+    <span class="comment"># 如果开启鼓励功能，添加额外要求</span>
+    <span class="keyword">if</span> user_settings[<span class="string">"encourage"</span>] == <span class="string">"开"</span>:
+        prompt += <span class="string">"6. 适当给予用户温暖的鼓励和正面的肯定"</span>
+    <span class="keyword">return</span> prompt</code></pre>
+                            </div>
+
+                            <div class="personalization-grid">
+                                <div class="person-item">
+                                    <span class="person-label">👤 称呼</span>
+                                    <span class="person-value">user_settings["name"]</span>
+                                </div>
+                                <div class="person-item">
+                                    <span class="person-label">🎂 年龄段</span>
+                                    <span class="person-value">青年/中年/老年</span>
+                                </div>
+                                <div class="person-item">
+                                    <span class="person-label">⚧ 性别</span>
+                                    <span class="person-value">先生/女士</span>
+                                </div>
+                                <div class="person-item">
+                                    <span class="person-label">💪 鼓励</span>
+                                    <span class="person-value">开/关</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">🔄</span>
+                            <h3>Ollama流式调用实现</h3>
+                            <span class="file-tag">routes/video.py</span>
+                        </div>
+                        <div class="section-body">
+                            <div class="code-block">
+                                <pre><code><span class="comment"># 创建Ollama客户端（已禁用代理避免干扰）</span>
+ollama_client = ollama.Client(host=<span class="string">'http://localhost:11434'</span>)
+
+<span class="comment"># 检测到方向变化时调用LLM生成个性化提示</span>
+response = ollama_client.chat(
+    model=<span class="string">"qwen2.5:3b"</span>,
+    messages=[
+        {<span class="string">"role"</span>: <span class="string">"system"</span>, <span class="string">"content"</span>: get_prompt_template(user_settings)},
+        {<span class="string">"role"</span>: <span class="string">"user"</span>, <span class="string">"content"</span>: left_turn_question}
+    ],
+    stream=<span class="keyword">True</span>  <span class="comment"># 流式输出，降低首字延迟</span>
+)
+
+<span class="comment"># 收集流式响应，降低用户感知延迟</span>
+answer_content = <span class="string">""</span>
+<span class="keyword">for</span> chunk <span class="keyword">in</span> response:
+    content = chunk.get(<span class="string">'message'</span>, {}).get(<span class="string">'content'</span>, <span class="string">''</span>)
+    answer_content += content</code></pre>
+                            </div>
+
+                            <div class="feature-highlight glass-card">
+                                <h4>🎯 核心技术要点</h4>
+                                <ul>
+                                    <li><strong>代理环境隔离</strong>：临时移除HTTP代理，避免干扰本地Ollama连接</li>
+                                    <li><strong>流式输出</strong>：降低首字延迟，提升用户体验</li>
+                                    <li><strong>降级策略</strong>：Ollama失败时使用默认提示语</li>
+                                </ul>
+                                </div>
+                                </div>
+                                </div>
+                                </div>
+                            </div>
+        </section>
+
+        <!-- 第8页：百度地图MCP详解 -->
+        <section class="slide slide-mcp" data-slide="8">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">07</span>
+                    <h2 class="slide-title">百度地图MCP协议详解</h2>
+                </div>
+                <div class="core-detail-content">
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">🔗</span>
+                            <h3>Model Context Protocol (MCP)</h3>
+                            <span class="file-tag">services/baidu_map_mcp.py</span>
+                        </div>
+                        <div class="section-body">
+                            <p class="section-intro">MCP是一种让大语言模型能够<strong>调用外部工具</strong>的标准协议，我们封装了百度地图API作为MCP工具供AI Agent调用：</p>
+                            
+                            <div class="mcp-tools-grid">
+                                <div class="mcp-tool glass-card">
+                                    <div class="tool-header">
+                                    <span class="tool-name">geocoding</span>
+                                        <span class="tool-badge">地址→坐标</span>
+                                </div>
+                                    <div class="tool-params">
+                                        <code>{"address": "地址", "city": "城市"}</code>
+                                    </div>
+                                    <div class="tool-desc">将文字地址转换为BD-09坐标系经纬度</div>
+                                </div>
+                                <div class="mcp-tool glass-card">
+                                    <div class="tool-header">
+                                    <span class="tool-name">reverse_geocoding</span>
+                                        <span class="tool-badge">坐标→地址</span>
+                                </div>
+                                    <div class="tool-params">
+                                        <code>{"lat": 纬度, "lng": 经度}</code>
+                                    </div>
+                                    <div class="tool-desc">将经纬度坐标转换为文字地址描述</div>
+                                </div>
+                                <div class="mcp-tool glass-card">
+                                    <div class="tool-header">
+                                    <span class="tool-name">search_places</span>
+                                        <span class="tool-badge">POI搜索</span>
+                                </div>
+                                    <div class="tool-params">
+                                        <code>{"query": "关键词", "lat": 纬度, "lng": 经度, "radius": 半径}</code>
+                                    </div>
+                                    <div class="tool-desc">搜索指定位置附近的地点</div>
+                                </div>
+                                <div class="mcp-tool glass-card">
+                                    <div class="tool-header">
+                                    <span class="tool-name">route_planning</span>
+                                        <span class="tool-badge">路线规划</span>
+                                    </div>
+                                    <div class="tool-params">
+                                        <code>{"origin_lat", "origin_lng", "dest_lat", "dest_lng", "mode"}</code>
+                                    </div>
+                                    <div class="tool-desc">支持步行(walking)、驾车(driving)、公交(transit)、骑行(riding)</div>
+                                </div>
+                            </div>
+                                </div>
+                            </div>
+
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">📍</span>
+                            <h3>MCP工具实现代码</h3>
+                        </div>
+                        <div class="section-body">
+                            <div class="code-block small">
+                                <pre><code><span class="keyword">def</span> <span class="function">geocoding</span>(self, address, city=<span class="keyword">None</span>):
+    <span class="string">"""地址解析：将地址转换为经纬度坐标（返回BD-09坐标系）"""</span>
+    params = {
+        <span class="string">'address'</span>: address,
+        <span class="string">'output'</span>: <span class="string">'json'</span>,
+        <span class="string">'ak'</span>: self.api_key,
+        <span class="string">'ret_coordtype'</span>: <span class="string">'bd09ll'</span>  <span class="comment"># 明确指定返回百度坐标系BD-09</span>
+    }
+    <span class="keyword">if</span> city:
+        params[<span class="string">'city'</span>] = city
+    
+    response = self.session.get(BAIDU_MAP_CONFIG[<span class="string">'web_service_url'</span>], params=params)
+    data = response.json()
+    
+    <span class="keyword">if</span> data.get(<span class="string">'status'</span>) == <span class="number">0</span>:
+        result = data[<span class="string">'result'</span>]
+        <span class="keyword">return</span> {
+            <span class="string">'success'</span>: <span class="keyword">True</span>,
+            <span class="string">'lat'</span>: result[<span class="string">'location'</span>][<span class="string">'lat'</span>],
+            <span class="string">'lng'</span>: result[<span class="string">'location'</span>][<span class="string">'lng'</span>],
+            <span class="string">'confidence'</span>: result.get(<span class="string">'confidence'</span>, <span class="number">0</span>)
+        }</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第9页：DeepSeek AI Agent详解 -->
+        <section class="slide slide-agent" data-slide="9">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">08</span>
+                    <h2 class="slide-title">DeepSeek AI Agent详解</h2>
+                </div>
+                <div class="core-detail-content">
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">🤖</span>
+                            <h3>ReAct模式Agent设计</h3>
+                            <span class="file-tag">services/deepseek_ai.py</span>
+                        </div>
+                        <div class="section-body">
+                            <p class="section-intro">采用<strong>ReAct (Reasoning + Acting)</strong>模式，让AI能够<strong>思考→行动→观察→再思考</strong>，迭代调用MCP工具解决复杂问题：</p>
+                            
+                            <div class="react-flow">
+                                <div class="react-step">
+                                    <div class="react-icon">🤔</div>
+                                    <div class="react-label">Reasoning</div>
+                                    <div class="react-desc">分析用户问题，决定下一步</div>
+                                </div>
+                                <div class="react-arrow">→</div>
+                                <div class="react-step">
+                                    <div class="react-icon">🔧</div>
+                                    <div class="react-label">Acting</div>
+                                    <div class="react-desc">调用MCP工具执行操作</div>
+                                </div>
+                                <div class="react-arrow">→</div>
+                                <div class="react-step">
+                                    <div class="react-icon">👁️</div>
+                                    <div class="react-label">Observation</div>
+                                    <div class="react-desc">观察工具返回结果</div>
+                                </div>
+                                <div class="react-arrow">→</div>
+                                <div class="react-step">
+                                    <div class="react-icon">💬</div>
+                                    <div class="react-label">Answer</div>
+                                    <div class="react-desc">生成最终回答</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">📋</span>
+                            <h3>Agent系统提示词</h3>
+                        </div>
+                        <div class="section-body">
+                            <div class="code-block small">
+                                <pre><code>self.system_prompt = <span class="string">"""你是地图服务Agent，采用ReAct模式迭代调用工具。
+
+工具列表：
+1. geocoding: 地址→坐标(BD-09)
+   参数: {"address": "地址", "city": "城市"}
+   ⚠️ 从地址中提取城市名传入city参数！
+
+2. reverse_geocoding: 坐标→地址
+3. search_places: 搜索附近地点
+4. route_planning: 路线规划
+
+返回格式（纯JSON，无markdown）：
+调用工具：{"type":"tool_call","action":"工具名","params":{参数},"reasoning":"原因"}
+给出答案：{"type":"answer","content":"回答内容","reasoning":"原因"}
+
+规则：
+- 路线规划前必须先用geocoding获取坐标
+- 一次一个工具，观察结果再决定下一步
+- confidence<40时在reasoning中提示"置信度低"
+"""</span></code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="core-section glass-card">
+                        <div class="section-header">
+                            <span class="section-icon">💡</span>
+                            <h3>对话历史管理与迭代</h3>
+                        </div>
+                        <div class="section-body">
+                            <div class="code-block small">
+                                <pre><code><span class="comment"># 构建对话历史，实现多轮工具调用</span>
+messages = [{<span class="string">'role'</span>: <span class="string">'system'</span>, <span class="string">'content'</span>: self.system_prompt}]
+messages.append({<span class="string">'role'</span>: <span class="string">'user'</span>, <span class="string">'content'</span>: context_message})
+
+<span class="comment"># 添加历史工具调用记录到对话中</span>
+<span class="keyword">for</span> history_item <span class="keyword">in</span> tool_history:
+    <span class="comment"># AI的工具调用决策</span>
+    ai_decision = {<span class="string">"type"</span>: <span class="string">"tool_call"</span>, <span class="string">"action"</span>: history_item[<span class="string">'action'</span>], ...}
+    messages.append({<span class="string">'role'</span>: <span class="string">'assistant'</span>, <span class="string">'content'</span>: json.dumps(ai_decision)})
+    
+    <span class="comment"># 工具执行结果作为新的用户消息</span>
+    tool_result_message = <span class="string">f"工具 {history_item['action']} 执行结果：\n{json.dumps(history_item['result'])}"</span>
+    messages.append({<span class="string">'role'</span>: <span class="string">'user'</span>, <span class="string">'content'</span>: tool_result_message})</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第10页：系统集成与数据流 -->
+        <section class="slide slide-flow" data-slide="10">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">09</span>
+                    <h2 class="slide-title">系统集成与数据流</h2>
+                </div>
+                <div class="flow-content">
+                    <div class="glass-card flow-diagram">
+                        <h3>🔄 盲道识别→语音播报 完整流程</h3>
+                        <div class="flow-steps">
+                            <div class="flow-step">
+                                <div class="flow-num">1</div>
+                                <div class="flow-detail">
+                                    <h4>📹 视频帧获取</h4>
+                                    <p>OpenCV读取视频流/摄像头</p>
+                                    <code>cap = cv2.VideoCapture(video_path)</code>
+                                </div>
+                            </div>
+                            <div class="flow-step">
+                                <div class="flow-num">2</div>
+                                <div class="flow-detail">
+                                    <h4>🎯 YOLO检测</h4>
+                                    <p>自训练模型识别盲道标记</p>
+                                    <code>results = model(frame)</code>
+                                </div>
+                            </div>
+                            <div class="flow-step">
+                                <div class="flow-num">3</div>
+                                <div class="flow-detail">
+                                    <h4>📐 斜率计算</h4>
+                                    <p>线性拟合判断转向方向</p>
+                                    <code>slope, _ = np.polyfit(ys, xs, 1)</code>
+                                </div>
+                            </div>
+                            <div class="flow-step">
+                                <div class="flow-num">4</div>
+                                <div class="flow-detail">
+                                    <h4>🧠 LLM生成</h4>
+                                    <p>Qwen2.5生成个性化提示</p>
+                                    <code>ollama_client.chat(model="qwen2.5:3b")</code>
+                                </div>
+                            </div>
+                            <div class="flow-step">
+                                <div class="flow-num">5</div>
+                                <div class="flow-detail">
+                                    <h4>🔊 语音播报</h4>
+                                    <p>pyttsx3合成并播放语音</p>
+                                    <code>speak(answer_content, user_settings)</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card flow-diagram">
+                        <h3>🗺️ 地图问答 完整流程</h3>
+                        <div class="flow-steps horizontal">
+                            <div class="flow-step mini">
+                                <div class="flow-num">1</div>
+                                <p>用户提问</p>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step mini">
+                                <div class="flow-num">2</div>
+                                <p>DeepSeek理解意图</p>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step mini">
+                                <div class="flow-num">3</div>
+                                <p>调用MCP工具</p>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step mini">
+                                <div class="flow-num">4</div>
+                                <p>迭代调用</p>
+                            </div>
+                            <div class="flow-arrow">→</div>
+                            <div class="flow-step mini">
+                                <div class="flow-num">5</div>
+                                <p>生成回答</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第11页：硬件平台 -->
+        <section class="slide slide-hardware" data-slide="11">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">10</span>
+                    <h2 class="slide-title">硬件平台与未来设想</h2>
+                </div>
+                <div class="hardware-content">
+                    <div class="hardware-main glass-card intel-glow">
+                        <div class="hardware-header">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/7/7d/Intel_logo_%282006-2020%29.svg" alt="Intel" class="hw-logo">
+                            <div class="hw-title">
+                                <h3>当前主力平台：Intel Core 酷睿</h3>
+                                <span class="hw-status active">✓ 已部署</span>
+                            </div>
+                        </div>
+                        <div class="hardware-features">
+                            <div class="hw-feature">
+                                <span class="hw-icon">🚀</span>
+                                <div>
+                                    <h4>IPEX-LLM优化的Ollama</h4>
+                                    <p>专门为Intel CPU优化的大模型推理框架</p>
+                                </div>
+                            </div>
+                            <div class="hw-feature">
+                                <span class="hw-icon">⚡</span>
+                                <div>
+                                    <h4>AVX-512指令集加速</h4>
+                                    <p>充分利用CPU向量计算能力</p>
+                                </div>
+                            </div>
+                            <div class="hw-feature">
+                                <span class="hw-icon">💻</span>
+                                <div>
+                                    <h4>本地部署无需GPU</h4>
+                                    <p>降低硬件成本，保护用户隐私</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hardware-future">
+                        <h3>🔮 硬件扩展设想</h3>
+                        <div class="future-hardware-grid">
+                            <div class="glass-card future-hw-card">
+                                <div class="future-hw-icon">🍇</div>
+                                <h4>树莓派 - 智能导盲杖</h4>
+                                <span class="hw-status progress">部分连通</span>
+                                <ul>
+                                    <li>小型化便携设备</li>
+                                    <li>集成摄像头+振动反馈</li>
+                                    <li>边缘轻量推理</li>
+                                </ul>
+                            </div>
+                            <div class="glass-card future-hw-card">
+                                <div class="future-hw-icon">🐕</div>
+                                <h4>开发板 - 导盲犬机器人</h4>
+                                <span class="hw-status progress">设想阶段</span>
+                                <ul>
+                                    <li>四足机器人载体</li>
+                                    <li>多传感器融合</li>
+                                    <li>自主避障导航</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <p class="future-note">💡 目前硬件扩展已建立部分连接，尚未完全连通，是未来重点攻克方向</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第12页：工作分工 -->
+        <section class="slide slide-team" data-slide="12">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">11</span>
+                    <h2 class="slide-title">团队分工</h2>
+                </div>
+                <div class="team-content">
+                    <div class="team-grid-5">
+                        <div class="team-member glass-card">
+                            <div class="member-avatar"><div class="avatar-circle">👨‍💻</div></div>
+                            <h3 class="member-name">孙宜飞</h3>
+                            <span class="member-role">项目负责人</span>
+                            <ul class="member-tasks">
+                                <li>整体架构设计</li>
+                                <li>IPEX-LLM部署配置</li>
+                                <li>AI Agent开发</li>
+                            </ul>
+                        </div>
+                        <div class="team-member glass-card">
+                            <div class="member-avatar"><div class="avatar-circle">👨‍🔬</div></div>
+                            <h3 class="member-name">陈星宇</h3>
+                            <span class="member-role">AI算法工程师</span>
+                            <ul class="member-tasks">
+                                <li>数据集采集与标注</li>
+                                <li>YOLOv8模型训练</li>
+                                <li>上下文工程设计</li>
+                            </ul>
+                        </div>
+                        <div class="team-member glass-card">
+                            <div class="member-avatar"><div class="avatar-circle">👨‍🎨</div></div>
+                            <h3 class="member-name">张凯</h3>
+                            <span class="member-role">前端开发</span>
+                            <ul class="member-tasks">
+                                <li>Web界面开发</li>
+                                <li>百度地图API集成</li>
+                                <li>无障碍交互设计</li>
+                            </ul>
+                        </div>
+                        <div class="team-member glass-card">
+                            <div class="member-avatar"><div class="avatar-circle">👨‍💼</div></div>
+                            <h3 class="member-name">沈乾</h3>
+                            <span class="member-role">后端开发</span>
+                            <ul class="member-tasks">
+                                <li>Flask API开发</li>
+                                <li>MySQL数据库设计</li>
+                                <li>MCP服务集成</li>
+                            </ul>
+                        </div>
+                        <div class="team-member glass-card">
+                            <div class="member-avatar"><div class="avatar-circle">👨‍🔧</div></div>
+                            <h3 class="member-name">盛晟</h3>
+                            <span class="member-role">测试与文档</span>
+                            <ul class="member-tasks">
+                                <li>系统集成测试</li>
+                                <li>文档编写</li>
+                                <li>演示准备</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="credits glass-card">
+                        <h4>🙏 特别感谢 - 数据集贡献</h4>
+                        <div class="credits-list">
+                            <span>Chen Xingyu</span>
+                            <span>Wang Youyi</span>
+                            <span>Liu Yiheng</span>
+                            <span>Cai Yuxin</span>
+                            <span>Zhang Chenshu</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第13页：未来规划 - 盲道地图 -->
+        <section class="slide slide-blindway-map" data-slide="13">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">12</span>
+                    <h2 class="slide-title">未来规划：盲道地图</h2>
+                </div>
+                <div class="blindway-content">
+                    <div class="glass-card blindway-vision">
+                        <div class="vision-header">
+                            <span class="vision-icon">🗺️</span>
+                            <h3>核心设想：众包盲道数据集</h3>
+                            </div>
+                        <p class="vision-desc">
+                            建立一个<strong>众包平台</strong>，让用户和志愿者上传各个区域的盲道信息，
+                            构建覆盖全城市的<strong>"盲道地图"</strong>数据库。
+                        </p>
+                        <div class="vision-workflow">
+                            <div class="workflow-step">
+                                <div class="workflow-num">1</div>
+                                <div class="workflow-content">
+                                    <h4>📷 数据采集</h4>
+                                    <p>用户/志愿者使用App拍摄记录各路段盲道情况</p>
+                            </div>
+                            </div>
+                            <div class="workflow-step">
+                                <div class="workflow-num">2</div>
+                                <div class="workflow-content">
+                                    <h4>🏷️ 标注上传</h4>
+                                    <p>标注盲道位置、状态（完好/破损/被占用）</p>
+                                </div>
+                            </div>
+                            <div class="workflow-step">
+                                <div class="workflow-num">3</div>
+                                <div class="workflow-content">
+                                    <h4>🗄️ 数据入库</h4>
+                                    <p>服务器聚合数据，构建盲道路网图</p>
+                                </div>
+                            </div>
+                            <div class="workflow-step">
+                                <div class="workflow-num">4</div>
+                                <div class="workflow-content">
+                                    <h4>🧭 智能路径</h4>
+                                    <p>导航时<strong>优先选择有盲道的路径</strong></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card blindway-benefits">
+                        <h3>💡 核心价值</h3>
+                        <div class="benefits-grid">
+                            <div class="benefit-item">
+                                <span class="benefit-icon">🛡️</span>
+                                <h4>更安全</h4>
+                                <p>优先规划有盲道的路线</p>
+                            </div>
+                            <div class="benefit-item">
+                                <span class="benefit-icon">🤝</span>
+                                <h4>众包共建</h4>
+                                <p>社会力量共同参与数据建设</p>
+                            </div>
+                            <div class="benefit-item">
+                                <span class="benefit-icon">🔄</span>
+                                <h4>实时更新</h4>
+                                <p>动态反映盲道实际状态</p>
+                            </div>
+                            <div class="benefit-item">
+                                <span class="benefit-icon">📊</span>
+                                <h4>城市治理</h4>
+                                <p>为市政部门提供维护依据</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第14页：发展路线图 -->
+        <section class="slide slide-roadmap" data-slide="14">
+            <div class="slide-inner scrollable">
+                <div class="slide-header">
+                    <span class="slide-number">13</span>
+                    <h2 class="slide-title">发展路线图</h2>
+                </div>
+                <div class="roadmap-content">
+                    <div class="roadmap-timeline">
+                        <div class="timeline-phase glass-card completed">
+                            <div class="phase-marker">✓</div>
+                            <div class="phase-content">
+                                <h4>🚀 第一阶段（已完成）</h4>
+                                <ul>
+                                    <li>✅ YOLO盲道检测模型训练</li>
+                                    <li>✅ IPEX-LLM本地部署</li>
+                                    <li>✅ 上下文工程个性化语音</li>
+                                    <li>✅ 百度地图MCP集成</li>
+                                    <li>✅ DeepSeek AI Agent</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="timeline-phase glass-card current">
+                            <div class="phase-marker">→</div>
+                            <div class="phase-content">
+                                <h4>📈 第二阶段（进行中）</h4>
+                                <ul>
+                                    <li>🔄 硬件扩展（树莓派/开发板）</li>
+                                    <li>🔄 移动端App开发</li>
+                                    <li>🔄 更多障碍物检测</li>
+                                    <li>🔄 LLM响应速度优化</li>
+                            </ul>
+                        </div>
+                            </div>
+                        <div class="timeline-phase glass-card future">
+                            <div class="phase-marker">○</div>
+                            <div class="phase-content">
+                                <h4>🌟 第三阶段（规划中）</h4>
+                                <ul>
+                                    <li>○ 众包盲道地图平台</li>
+                                    <li>○ 盲道优先路径规划</li>
+                                    <li>○ 多地图服务接入</li>
+                                    <li>○ 室内导航支持</li>
+                            </ul>
+                        </div>
+                            </div>
+                        <div class="timeline-phase glass-card future highlight">
+                            <div class="phase-marker">★</div>
+                            <div class="phase-content">
+                                <h4>🎯 长期愿景</h4>
+                                <ul>
+                                    <li>★ 公益机构合作推广</li>
+                                    <li>★ 智能穿戴设备（眼镜）</li>
+                                    <li>★ 完整无障碍出行生态</li>
+                                    <li>★ 多语言国际化支持</li>
+                            </ul>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第15页：感谢 -->
+        <section class="slide slide-thanks" data-slide="15">
+            <div class="slide-inner">
+                <div class="thanks-content">
+                    <div class="glass-card thanks-card">
+                        <h1 class="thanks-title gradient-text">感谢聆听</h1>
+                        <p class="thanks-subtitle">基于计算机视觉与大型语言模型的视障人士出行辅助系统</p>
+                        
+                        <div class="qna-badge">
+                            <span class="qna-text">Q&A</span>
+                            <p>欢迎提问交流</p>
+                        </div>
+
+                        <div class="project-summary">
+                            <div class="summary-item">
+                                <span class="summary-icon">🎯</span>
+                                <span>YOLOv8盲道检测</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-icon">🧠</span>
+                                <span>Qwen2.5个性化语音</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-icon">🗺️</span>
+                                <span>百度地图MCP</span>
+                            </div>
+                            <div class="summary-item">
+                                <span class="summary-icon">🤖</span>
+                                <span>DeepSeek AI Agent</span>
+                            </div>
+                        </div>
+
+                        <div class="contact-info">
+                            <div class="contact-item">
+                                <span class="contact-icon">👥</span>
+                                <span>团队：孙宜飞、陈星宇、张凯、沈乾、盛晟</span>
+                            </div>
+                            <div class="contact-item">
+                                <span class="contact-icon">🔗</span>
+                                <span>github.com/wink-wink-wink555</span>
+                            </div>
+                            </div>
+
+                        <div class="partner-logos">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/7/7d/Intel_logo_%282006-2020%29.svg" alt="Intel" class="partner-logo">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 侧边导航 -->
+    <nav class="side-nav">
+        <div class="nav-dot active" data-slide="1" title="封面"></div>
+        <div class="nav-dot" data-slide="2" title="市场痛点"></div>
+        <div class="nav-dot" data-slide="3" title="系统架构"></div>
+        <div class="nav-dot" data-slide="4" title="双端口设计"></div>
+        <div class="nav-dot" data-slide="5" title="技术栈"></div>
+        <div class="nav-dot" data-slide="6" title="YOLO盲道检测"></div>
+        <div class="nav-dot" data-slide="7" title="大模型上下文工程"></div>
+        <div class="nav-dot" data-slide="8" title="百度地图MCP"></div>
+        <div class="nav-dot" data-slide="9" title="DeepSeek Agent"></div>
+        <div class="nav-dot" data-slide="10" title="系统集成"></div>
+        <div class="nav-dot" data-slide="11" title="硬件平台"></div>
+        <div class="nav-dot" data-slide="12" title="团队分工"></div>
+        <div class="nav-dot" data-slide="13" title="盲道地图"></div>
+        <div class="nav-dot" data-slide="14" title="发展路线"></div>
+        <div class="nav-dot" data-slide="15" title="感谢"></div>
+    </nav>
+
+    <!-- 快捷键提示 -->
+    <div class="shortcuts-hint">
+        <span>← → 翻页</span>
+        <span>↑↓ 滚动</span>
+        <span>F 全屏</span>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
