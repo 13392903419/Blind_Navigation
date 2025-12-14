@@ -11,7 +11,7 @@
 
 </div>
 
-> 📹 Demo Video: https://www.bilibili.com/video/BV1kD57zGE68
+> 📹 Demo Video: https://www.bilibili.com/video/BV1kD57zGE68 (v1.0.0)
 
 ## 🌟 Introduction
 
@@ -323,4 +323,5 @@ For detailed terms, please refer to the [LICENSE](LICENSE) file.
 ---
 
 ⭐ If this project helps you, please give it a star!
+
 
