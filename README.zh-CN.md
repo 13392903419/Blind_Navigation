@@ -11,7 +11,7 @@
 
 </div>
 
-> 📹 演示视频：https://www.bilibili.com/video/BV1kD57zGE68
+> 📹 演示视频：https://www.bilibili.com/video/BV1kD57zGE68 (v1.0.0)
 
 ## 🌟 项目简介
 
@@ -323,5 +323,6 @@ Copyright (c) 2025 wink-wink-wink555
 ---
 
 ⭐ 如果这个项目对您有帮助，欢迎给个Star！
+
 
 
