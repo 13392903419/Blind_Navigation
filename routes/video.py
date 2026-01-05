@@ -9,14 +9,27 @@ import threading
 import time
 import os
 from werkzeug.utils import secure_filename
+
+import functools
+import torch
+
+# 在加载模型前，强制将 torch.load 的默认参数 weights_only 设置为 False
+torch.load = functools.partial(torch.load, weights_only=False)
+
+video_bp = Blueprint('video', __name__)
+# 允许加载 Ultralytics 的模型类
+torch.serialization.add_safe_globals([
+    'ultralytics.nn.tasks.DetectionModel',
+    'ultralytics.nn.modules.container.Sequential',
+    # 如果报错还提到其他类，继续往这里添加
+])
+
 from ultralytics import YOLO
 
 from utils.decorators import login_required
 from utils.video_utils import allowed_file, create_error_frame, create_info_frame
 from utils.voice_utils import speak, get_prompt_template
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
-
-video_bp = Blueprint('video', __name__)
 
 # 加载YOLO模型
 model = YOLO(MODEL_WEIGHTS)
