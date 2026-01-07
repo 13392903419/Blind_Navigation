@@ -70,6 +70,16 @@ video_active = False
 last_call_time = 0
 current_speech_text = ""
 
+# 性能统计变量
+model_stats = {
+    'fps': 0,
+    'latency': 0,
+    'confidence': 0,
+    'last_update': 0
+}
+frame_times = []  # 存储最近的帧时间戳
+max_frame_history = 30  # 保留最近30帧的数据
+
 # 转向提示问题
 right_turn_question = "请用亲切且简短的话语告知要往右拐，因为盲道是往右拐的"
 left_turn_question = "请用亲切且简短的话语告知要往左拐，因为盲道是往左拐的"
@@ -87,7 +97,7 @@ def get_user_settings_for_video():
 
 def generate_frames():
     """生成视频帧用于流式传输"""
-    global last_call_time, current_speech_text, current_video_path, video_active
+    global last_call_time, current_speech_text, current_video_path, video_active, model_stats, frame_times
 
     # 如果视频未激活，显示等待上传提示
     if not video_active or not current_video_path:
@@ -149,9 +159,13 @@ def generate_frames():
                 current_speech_text = "视频播放完毕，请上传新视频。"
                 break
 
+            # 记录帧开始处理时间
+            frame_start_time = time.time()
+
             # 处理视频帧 - YOLO检测
             results = model(frame)
             centers = []  # 存储所有检测框的 (center_x, center_y)
+            confidences = []  # 存储所有检测框的置信度
 
             for result in results:
                 boxes = result.boxes
@@ -162,11 +176,40 @@ def generate_frames():
                     center_x = (x1 + x2) / 2
                     center_y = (y1 + y2) / 2
                     centers.append((center_x, center_y))
+                    confidences.append(float(conf))
 
                     class_names = model.names
                     label = f"{class_names[cls]}: {conf:.2f}"
                     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                     cv2.putText(frame, label, (int(x1), int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+            # 计算性能指标
+            frame_end_time = time.time()
+            frame_latency = (frame_end_time - frame_start_time) * 1000  # 转换为毫秒
+            
+            # 更新帧时间历史
+            frame_times.append(frame_end_time)
+            if len(frame_times) > max_frame_history:
+                frame_times.pop(0)
+            
+            # 计算FPS（基于最近的帧）
+            if len(frame_times) >= 2:
+                time_span = frame_times[-1] - frame_times[0]
+                if time_span > 0:
+                    current_fps = len(frame_times) / time_span
+                else:
+                    current_fps = 0
+            else:
+                current_fps = 0
+            
+            # 计算平均置信度
+            avg_confidence = int(np.mean(confidences) * 100) if confidences else 0
+            
+            # 更新全局统计数据
+            model_stats['fps'] = int(current_fps)
+            model_stats['latency'] = int(frame_latency)
+            model_stats['confidence'] = avg_confidence
+            model_stats['last_update'] = time.time()
 
             current_time = time.time()
             if len(centers) >= 2 and current_time - last_call_time >= CALL_INTERVAL:
@@ -397,3 +440,31 @@ def upload_video():
         traceback.print_exc()
         return jsonify({"status": "error", "message": f"上传失败: {str(e)}"}), 500
 
+
+@video_bp.route('/get_model_stats', methods=['GET'])
+def get_model_stats():
+    """获取模型性能统计数据"""
+    global model_stats, video_active
+    
+    # 检查视频是否正在运行，如果超过3秒没有更新，认为已停止
+    current_time = time.time()
+    is_active = video_active and (current_time - model_stats.get('last_update', 0)) < 3
+    
+    if not is_active:
+        # 视频未运行时返回默认值
+        return jsonify({
+            "status": "success",
+            "active": False,
+            "fps": 0,
+            "latency": 0,
+            "confidence": 0
+        })
+    
+    # 返回实时性能数据
+    return jsonify({
+        "status": "success",
+        "active": True,
+        "fps": model_stats.get('fps', 0),
+        "latency": model_stats.get('latency', 0),
+        "confidence": model_stats.get('confidence', 0)
+    })

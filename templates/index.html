@@ -104,41 +104,53 @@
             padding-bottom: 2rem;
         }
         
-        /* 新增两列布局 */
+        /* 新增布局系统 */
         .content-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            display: flex;
+            flex-direction: column;
             gap: 1.5rem;
+        }
+        
+        /* 三视频卡片行布局 */
+        .video-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            width: 100%;
+        }
+        
+        .video-row .card {
+            display: flex;
+            flex-direction: column;
+            min-height: 520px;
+        }
+        
+        /* 功能行布局（地图、上传、AI助手） */
+        .function-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            width: 100%;
         }
         
         .content-full {
             grid-column: 1 / -1;
         }
-        
-        .content-left {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-        
-        .content-right {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
 
         .card {
-            background-color: var(--card-bg);
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
             border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.06);
             padding: 1.5rem;
             margin-bottom: 0;
             transition: var(--transition);
+            border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
         .card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
         }
         
         .card-title {
@@ -252,17 +264,44 @@
             margin: 0 auto;
             overflow: hidden;
             border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            min-height: 360px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             background-color: #2c3e50;
             position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            flex-shrink: 0;
+        }
+        
+        .video-feed > * {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
         .video-feed img {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            height: auto;
+            height: 100%;
+            object-fit: cover;
             border-radius: var(--border-radius);
             transition: var(--transition);
+        }
+        
+        .video-feed::before {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255,255,255,0.3);
+            font-size: 1rem;
+            z-index: 0;
+            pointer-events: none;
         }
 
         .speech-text {
@@ -1354,50 +1393,6 @@
             color: white;
         }
         
-        /* 视频上传和显示优化 */
-        .upload-form {
-            text-align: center;
-            padding: 1.5rem;
-            border: 2px dashed #dee2e6;
-            border-radius: var(--border-radius);
-            margin-bottom: 1.5rem;
-            transition: var(--transition);
-            position: relative;
-            background-color: #f8f9fa;
-        }
-        
-        .video-feed {
-            text-align: center;
-            margin: 0 auto;
-            overflow: hidden;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            min-height: 320px;
-            background-color: #2c3e50;
-            position: relative;
-            border: 1px solid #dee2e6;
-        }
-        
-        .video-feed::before {
-            content: "视频分析画面";
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: rgba(255,255,255,0.5);
-            font-size: 1.2rem;
-            z-index: 0;
-        }
-        
-        .video-feed img {
-            width: 100%;
-            height: auto;
-            border-radius: var(--border-radius);
-            transition: var(--transition);
-            position: relative;
-            z-index: 1;
-        }
-        
         /* 语音提示优化 */
         .speech-text {
             padding: 1.5rem;
@@ -1411,7 +1406,7 @@
         }
         
         .speech-text::before {
-            content: """;
+            content: "\201C";
             position: absolute;
             top: 0.5rem;
             left: 0.5rem;
@@ -1462,14 +1457,91 @@
             transform: translateY(-2px);
         }
         
+        /* 模型状态徽标 */
+        .model-status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+        
+        .status-running {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-idle {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-placeholder {
+            background-color: #e7e7e7;
+            color: #6c757d;
+        }
+        
+        .model-meta-info {
+            display: flex;
+            justify-content: space-around;
+            padding: 0.75rem;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-top: 0.75rem;
+            font-size: 0.85rem;
+        }
+        
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .meta-label {
+            color: #6c757d;
+            font-size: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .meta-value {
+            color: var(--primary-dark);
+            font-weight: 600;
+        }
+        
+        .model-path {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+        }
+        
         /* 响应式设计优化 */
-        @media (max-width: 992px) {
-            .content-grid {
+        @media (max-width: 1200px) {
+            .function-row {
                 grid-template-columns: 1fr;
             }
-            
-            .content-left, .content-right {
-                grid-column: 1 / -1;
+        }
+        
+        @media (max-width: 992px) {
+            .video-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .video-row {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .function-row {
+                grid-template-columns: 1fr;
             }
         }
         
@@ -1893,52 +1965,154 @@
 
     <div class="container">
         <div class="content-grid">
-            <!-- 左侧内容列 -->
-            <div class="content-left">
-                <!-- 视频上传和分析卡片 -->
+            <!-- 三视频卡片行 -->
+            <div class="video-row">
+                <!-- 主模型 - 盲道检测 -->
                 <div class="card">
                     <div class="card-title">
-                        <i class="fas fa-video"></i> 盲道视频分析
+                        <i class="fas fa-video"></i> 主模型 - 盲道检测
+                        <span class="model-status-badge status-running">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 运行中
+                        </span>
                     </div>
-                    <div class="upload-form" id="uploadArea">
-                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                        <h2 class="upload-title">上传视频进行盲道分析</h2>
-                        <p class="upload-instructions">拖放视频文件到此处，或点击下方按钮选择</p>
-                        <form id="videoUploadForm" enctype="multipart/form-data">
-                            <div class="file-input-wrapper">
-                                <input type="file" name="video" id="videoFile" class="file-input" accept="video/*">
-                                <label for="videoFile" class="file-input-label"><i class="fas fa-file-video"></i> 选择视频文件</label>
-                            </div>
-                            <div class="file-name" id="fileName">未选择文件</div>
-                            <button type="button" id="uploadBtn" class="upload-btn" onclick="uploadVideo()" disabled><i class="fas fa-upload"></i> 开始分析</button>
-                        </form>
-                        <div id="uploadStatus"></div>
-                        <div class="loader" id="uploadLoader"></div>
-                    </div>
-
                     <div class="video-feed">
-                        <img src="{{ url_for('video.video_feed') }}" alt="视频分析画面">
+                        <img src="{{ url_for('video.video_feed') }}" alt="主模型视频分析">
+                    </div>
+                    <div class="model-meta-info">
+                        <div class="meta-item">
+                            <span class="meta-label">FPS</span>
+                            <span class="meta-value" id="model1-fps">30</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">延迟</span>
+                            <span class="meta-value" id="model1-latency">45ms</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">置信度</span>
+                            <span class="meta-value" id="model1-confidence">92%</span>
+                        </div>
+                    </div>
+                    <div class="model-path">
+                        <i class="fas fa-cube"></i> tactile_paving_train/weights/best.pt
                     </div>
                 </div>
 
-                <!-- 语音提示卡片 -->
+                <!-- 模型2 - 候选模型A -->
                 <div class="card">
                     <div class="card-title">
-                        <i class="fas fa-volume-up"></i> 语音导航提示
+                        <i class="fas fa-video"></i> 模型2 - 障碍物检测
+                        <span class="model-status-badge status-placeholder">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 待接入
+                        </span>
                     </div>
-                    <div class="speech-text" id="speechText">
-                        <p>提示：上传视频后，系统将分析盲道方向，当方向发生变化时会自动播报语音提示。</p>
+                    <div class="video-feed">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.5);">
+                            <div style="text-align: center;">
+                                <i class="fas fa-cube" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                <p>模型训练中...</p>
+                            </div>
+                        </div>
                     </div>
+                    <div class="model-meta-info">
+                        <div class="meta-item">
+                            <span class="meta-label">FPS</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">延迟</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">置信度</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                    </div>
+                    <div class="model-path">
+                        <i class="fas fa-cube"></i> yolo/model_b_best.pt
+                    </div>
+                </div>
 
-                    <div id="messageInputArea" class="input-area" {% if settings.user_mode == "盲人端" %}style="display: none;"{% endif %}>
-                        <input type="text" id="familyMessage" placeholder="想发送语音消息给视障人士？在这里输入...">
-                        <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i> 发送</button>
+                <!-- 模型3 - 候选模型B -->
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-video"></i> 模型3 - 交通标识识别
+                        <span class="model-status-badge status-placeholder">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 待接入
+                        </span>
+                    </div>
+                    <div class="video-feed">
+                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.5);">
+                            <div style="text-align: center;">
+                                <i class="fas fa-cube" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                <p>模型训练中...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="model-meta-info">
+                        <div class="meta-item">
+                            <span class="meta-label">FPS</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">延迟</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">置信度</span>
+                            <span class="meta-value">--</span>
+                        </div>
+                    </div>
+                    <div class="model-path">
+                        <i class="fas fa-cube"></i> yolo/model_c_best.pt
                     </div>
                 </div>
             </div>
 
-            <!-- 右侧内容列 -->
-            <div class="content-right">
+            <!-- 功能行：上传视频/语音提示 -->
+            <div class="content-full">
+                <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-cloud-upload-alt"></i> 视频上传与语音导航
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                        <!-- 视频上传区 -->
+                        <div>
+                            <div class="upload-form" id="uploadArea" style="margin-bottom: 0;">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <h2 class="upload-title" style="font-size: 1.1rem;">上传视频进行分析</h2>
+                                <p class="upload-instructions" style="font-size: 0.9rem;">拖放文件到此处，或点击按钮选择</p>
+                                <form id="videoUploadForm" enctype="multipart/form-data">
+                                    <div class="file-input-wrapper">
+                                        <input type="file" name="video" id="videoFile" class="file-input" accept="video/*">
+                                        <label for="videoFile" class="file-input-label" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;"><i class="fas fa-file-video"></i> 选择视频</label>
+                                    </div>
+                                    <div class="file-name" id="fileName" style="font-size: 0.85rem;">未选择文件</div>
+                                    <button type="button" id="uploadBtn" class="upload-btn" style="padding: 0.6rem 1.2rem; font-size: 0.9rem; margin-top: 0.75rem;" onclick="uploadVideo()" disabled><i class="fas fa-upload"></i> 开始分析</button>
+                                </form>
+                                <div id="uploadStatus"></div>
+                                <div class="loader" id="uploadLoader"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- 语音提示区 -->
+                        <div>
+                            <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--primary-dark);">
+                                <i class="fas fa-volume-up"></i> 语音导航提示
+                            </h3>
+                            <div class="speech-text" id="speechText" style="min-height: 80px; margin-bottom: 1rem;">
+                                <p>提示：上传视频后，系统将分析盲道方向，当方向发生变化时会自动播报语音提示。</p>
+                            </div>
+                            <div id="messageInputArea" class="input-area" {% if settings.user_mode == "盲人端" %}style="display: none;"{% endif %}>
+                                <input type="text" id="familyMessage" placeholder="发送语音消息给视障人士...">
+                                <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i> 发送</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 功能行：地图、AI助手、系统状态 -->
+            <div class="function-row">
                 <!-- 地图定位卡片 -->
                 <div class="card">
                     <div class="card-title">
@@ -3555,7 +3729,49 @@
                 setTimeout(initMap, 100); // 延迟加载地图，确保DOM已完全加载
             });
             updateSystemStatus(); // 初始化系统状态
+            startModelStatsPolling(); // 启动模型性能数据轮询
         });
+
+        // 模型性能数据获取和更新
+        async function fetchModelStats() {
+            try {
+                const response = await fetch('/get_model_stats');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateModelDisplay(data);
+                }
+            } catch (error) {
+                console.error('获取模型性能数据失败:', error);
+            }
+        }
+
+        function updateModelDisplay(data) {
+            const fpsElement = document.getElementById('model1-fps');
+            const latencyElement = document.getElementById('model1-latency');
+            const confidenceElement = document.getElementById('model1-confidence');
+            
+            if (fpsElement && latencyElement && confidenceElement) {
+                if (data.active) {
+                    // 显示实时数据
+                    fpsElement.textContent = data.fps;
+                    latencyElement.textContent = data.latency + 'ms';
+                    confidenceElement.textContent = data.confidence + '%';
+                } else {
+                    // 视频未运行，显示占位值
+                    fpsElement.textContent = '--';
+                    latencyElement.textContent = '--';
+                    confidenceElement.textContent = '--';
+                }
+            }
+        }
+
+        function startModelStatsPolling() {
+            // 立即执行一次
+            fetchModelStats();
+            // 每2秒更新一次
+            setInterval(fetchModelStats, 2000);
+        }
 
         // 添加手动选择位置的功能
         let manualStartLocationMode = false;
