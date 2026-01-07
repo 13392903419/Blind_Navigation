@@ -31,8 +31,21 @@ from utils.video_utils import allowed_file, create_error_frame, create_info_fram
 from utils.voice_utils import speak, get_prompt_template
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
 
-# 加载YOLO模型
+# 加载YOLO模型并优化性能
 model = YOLO(MODEL_WEIGHTS)
+
+# 检测GPU并启用加速
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+if device == 'cuda':
+    model.to(device)
+    print("[YOLO] 使用设备: CUDA (GPU), FP32推理")
+    # 注意：FP16在某些GPU/环境下fuse时会出现dtype错误，因此默认使用FP32
+    # 如需启用FP16，请在推理参数中使用 half=True，而不是在初始化时转换
+else:
+    # CPU模式，确保使用FP32
+    model.model.float()
+    print("[YOLO] 使用设备: CPU, FP32推理")
 
 # 禁用代理环境变量，避免代理干扰本地 Ollama 连接
 # 保存原有代理设置
@@ -83,6 +96,24 @@ max_frame_history = 30  # 保留最近30帧的数据
 # 转向提示问题
 right_turn_question = "请用亲切且简短的话语告知要往右拐，因为盲道是往右拐的"
 left_turn_question = "请用亲切且简短的话语告知要往左拐，因为盲道是往左拐的"
+
+# 视频处理优化参数
+MAX_FRAME_SIZE = 640  # 最长边缩放到640像素
+
+def resize_frame(frame, max_size=MAX_FRAME_SIZE):
+    """等比例缩放帧，保持最长边不超过max_size"""
+    h, w = frame.shape[:2]
+    if max(h, w) <= max_size:
+        return frame, 1.0  # 无需缩放
+    
+    # 计算缩放比例
+    scale = max_size / max(h, w)
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+    
+    # 使用INTER_AREA进行下采样（质量更好）
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return resized, scale
 
 
 def get_user_settings_for_video():
@@ -162,26 +193,38 @@ def generate_frames():
             # 记录帧开始处理时间
             frame_start_time = time.time()
 
-            # 处理视频帧 - YOLO检测
-            results = model(frame)
+            # 缩放帧以加速推理
+            resized_frame, scale = resize_frame(frame)
+            
+            # 处理视频帧 - YOLO检测（优化参数）
+            results = model(
+                resized_frame,
+                verbose=False  # 关闭日志输出
+            )
             centers = []  # 存储所有检测框的 (center_x, center_y)
             confidences = []  # 存储所有检测框的置信度
 
             for result in results:
                 boxes = result.boxes
                 for box in boxes:
-                    x1, y1, x2, y2 = box.xyxy[0]
-                    conf = box.conf[0]
-                    cls = int(box.cls[0])
-                    center_x = (x1 + x2) / 2
-                    center_y = (y1 + y2) / 2
+                    # 获取缩放后的坐标 (GPU tensor需要先转CPU再转numpy/float)
+                    x1, y1, x2, y2 = box.xyxy[0].cpu()
+                    conf = box.conf[0].cpu()
+                    cls = int(box.cls[0].cpu())
+                    
+                    # 将坐标缩放回原始尺寸用于中心点计算
+                    orig_x1, orig_y1 = float(x1) / scale, float(y1) / scale
+                    orig_x2, orig_y2 = float(x2) / scale, float(y2) / scale
+                    center_x = (orig_x1 + orig_x2) / 2
+                    center_y = (orig_y1 + orig_y2) / 2
                     centers.append((center_x, center_y))
                     confidences.append(float(conf))
 
+                    # 在原始帧上绘制（使用缩放回的坐标）
                     class_names = model.names
                     label = f"{class_names[cls]}: {conf:.2f}"
-                    cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                    cv2.putText(frame, label, (int(x1), int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    cv2.rectangle(frame, (int(orig_x1), int(orig_y1)), (int(orig_x2), int(orig_y2)), (0, 255, 0), 2)
+                    cv2.putText(frame, label, (int(orig_x1), int(orig_y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
             # 计算性能指标
             frame_end_time = time.time()
