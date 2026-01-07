@@ -49,4 +49,4 @@ if __name__ == '__main__':
     
     # 运行应用
     print("启动Flask应用...")
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)

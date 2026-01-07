@@ -2,7 +2,18 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 移动端优化：视口配置 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <!-- 移动端优化：防止电话号码自动识别 -->
+    <meta name="format-detection" content="telephone=no, email=no, address=no">
+    <!-- 移动端优化：Apple移动Web应用 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="盲道导航">
+    <!-- 移动端优化：全屏模式 -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <!-- 移动端优化：主题颜色 -->
+    <meta name="theme-color" content="#4F46E5">
     <title>盲道导航助手</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -1939,7 +1950,174 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* ==================== 移动端响应式样式 ==================== */
+        
+        /* 平板竖屏及以下 (≤768px) */
+        @media (max-width: 768px) {
+            /* 头部适配 */
+            header {
+                padding: 1.5rem 0;
+            }
+            
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .subtitle {
+                font-size: 1rem;
+            }
+            
+            /* 容器适配 */
+            .container {
+                width: 100%;
+                padding: 0 1rem 2rem;
+            }
+            
+            /* 三视频卡片改为单列 */
+            .video-row {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            /* 功能行改为单列 */
+            .function-row {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            /* 卡片适配 */
+            .card {
+                padding: 1rem;
+                min-height: auto !important;
+            }
+            
+            /* 视频容器高度自适应 */
+            .video-container {
+                min-height: 200px;
+            }
+            
+            /* 按钮适配 */
+            .btn, button, input[type="file"] + label {
+                padding: 0.8rem 1.2rem;
+                font-size: 1rem;
+                min-height: 44px; /* iOS触摸最小尺寸 */
+            }
+            
+            /* 文件上传按钮 */
+            .file-upload-wrapper {
+                margin: 1rem 0;
+            }
+            
+            /* Meta信息网格改为单列 */
+            .meta-info {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+            
+            /* 地图容器 */
+            #map {
+                height: 300px;
+            }
+            
+            /* 语音文本框 */
+            .speech-text {
+                font-size: 1rem;
+                padding: 1rem;
+                max-height: 150px;
+            }
+            
+            /* AI助手消息 */
+            .message {
+                padding: 0.8rem;
+                font-size: 0.95rem;
+            }
+            
+            /* 输入框和按钮组 */
+            .input-group {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+            
+            .input-group input {
+                min-height: 44px;
+            }
+            
+            .input-group button {
+                width: 100%;
+            }
+        }
+        
+        /* 手机横屏 (≤667px 横屏) */
+        @media (max-width: 667px) and (orientation: landscape) {
+            header {
+                padding: 1rem 0;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .subtitle {
+                display: none; /* 横屏隐藏副标题节省空间 */
+            }
+            
+            .video-container {
+                min-height: 150px;
+            }
+        }
+        
+        /* 小屏手机 (≤480px) */
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .subtitle {
+                font-size: 0.9rem;
+            }
+            
+            .container {
+                padding: 0 0.75rem 1.5rem;
+            }
+            
+            .card {
+                padding: 0.75rem;
+                border-radius: 8px;
+            }
+            
+            .btn {
+                font-size: 0.9rem;
+                padding: 0.7rem 1rem;
+            }
+            
+            /* 视频元数据字体缩小 */
+            .meta-item-value {
+                font-size: 1.2rem;
+            }
+            
+            .meta-item-label {
+                font-size: 0.75rem;
+            }
+        }
+        
+        /* 触摸优化：防止双击缩放 */
+        button, .btn, a {
+            touch-action: manipulation;
+        }
+        
+        /* 触摸反馈 */
+        button:active, .btn:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+        
+        /* 移动端滚动优化 */
+        .chat-messages, .speech-text {
+            -webkit-overflow-scrolling: touch;
+        }
     </style>
+```
 </head>
 <body>
     <header>
@@ -2086,12 +2264,26 @@
                                         <input type="file" name="video" id="videoFile" class="file-input" accept="video/*">
                                         <label for="videoFile" class="file-input-label" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;"><i class="fas fa-file-video"></i> 选择视频</label>
                                     </div>
+                                    <!-- 移动端摄像头按钮 -->
+                                    <div class="mobile-camera-controls" style="margin-top: 0.75rem; display: none;">
+                                        <button type="button" id="startCameraBtn" class="btn" style="width: 100%; padding: 0.7rem;">
+                                            <i class="fas fa-camera"></i> 打开摄像头
+                                        </button>
+                                        <button type="button" id="stopCameraBtn" class="btn" style="width: 100%; padding: 0.7rem; margin-top: 0.5rem; display: none; background: #e74c3c;">
+                                            <i class="fas fa-stop"></i> 停止采集
+                                        </button>
+                                        <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #666; text-align: center;" id="cameraStatus"></div>
+                                    </div>
                                     <div class="file-name" id="fileName" style="font-size: 0.85rem;">未选择文件</div>
                                     <button type="button" id="uploadBtn" class="upload-btn" style="padding: 0.6rem 1.2rem; font-size: 0.9rem; margin-top: 0.75rem;" onclick="uploadVideo()" disabled><i class="fas fa-upload"></i> 开始分析</button>
                                 </form>
                                 <div id="uploadStatus"></div>
                                 <div class="loader" id="uploadLoader"></div>
                             </div>
+                            
+                            <!-- 隐藏的video元素用于摄像头预览 -->
+                            <video id="cameraPreview" style="display: none; width: 100%; max-height: 300px; border-radius: 8px; margin-top: 1rem;" autoplay playsinline></video>
+                            <canvas id="captureCanvas" style="display: none;"></canvas>
                         </div>
                         
                         <!-- 语音提示区 -->
@@ -3480,6 +3672,8 @@
                     }
                     showMessage("浏览器定位失败：" + errorMessage + "\n请尝试使用'手动选择位置'功能");
                     updateLocationStatus('定位失败');
+                    // 在HTTP环境或权限受限时，尝试使用百度定位作为降级方案
+                    tryBaiduGeolocation();
                 }, {
                     enableHighAccuracy: true,
                     timeout: 10000,
@@ -3488,6 +3682,54 @@
             } else {
                 showMessage("您的浏览器不支持地理定位\n请尝试使用'手动选择位置'功能");
                 updateLocationStatus('不支持');
+            }
+        }
+
+        // 降级：使用百度地图定位（可在HTTP下基于IP/基站获取大致位置）
+        function tryBaiduGeolocation() {
+            try {
+                if (typeof BMap === 'undefined') {
+                    console.warn('Baidu Map 未加载，无法使用百度定位');
+                    return;
+                }
+
+                console.log('尝试使用百度定位作为降级...');
+                updateLocationStatus('使用百度定位中');
+
+                var geolocation = new BMap.Geolocation();
+                geolocation.enableSDKLocation && geolocation.enableSDKLocation();
+
+                geolocation.getCurrentPosition(function (r) {
+                    try {
+                        if (this.getStatus && this.getStatus() === window.BMAP_STATUS_SUCCESS) {
+                            console.log('百度定位成功:', r.point);
+                            var point = r.point;
+
+                            if (marker) {
+                                map.removeOverlay(marker);
+                            }
+                            marker = new BMap.Marker(point);
+                            map.addOverlay(marker);
+                            map.centerAndZoom(point, 17);
+
+                            currentPosition = { lat: point.lat, lng: point.lng };
+                            getAddressFromPoint(point);
+                            updateLocationOnServer(point.lat, point.lng);
+                            updateLocationStatus('已定位(百度)');
+                            showMessage('已使用百度定位获取大致位置');
+                        } else {
+                            console.warn('百度定位失败，状态码:', this.getStatus && this.getStatus());
+                            showMessage('无法获取位置：浏览器和百度定位均失败，请手动选择位置');
+                            updateLocationStatus('定位失败');
+                        }
+                    } catch (e) {
+                        console.error('处理百度定位结果出错:', e);
+                        showMessage('定位结果处理出错');
+                        updateLocationStatus('定位失败');
+                    }
+                }, { enableHighAccuracy: true, timeout: 10000 });
+            } catch (e) {
+                console.error('百度定位调用异常:', e);
             }
         }
 
@@ -3730,7 +3972,161 @@
             });
             updateSystemStatus(); // 初始化系统状态
             startModelStatsPolling(); // 启动模型性能数据轮询
+            initMobileCamera(); // 初始化移动端摄像头功能
         });
+        
+        // ==================== 移动端摄像头功能 ====================
+        let cameraStream = null;
+        let captureInterval = null;
+        let isMobileDevice = false;
+        
+        function initMobileCamera() {
+            // 检测是否为移动设备
+            isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (isMobileDevice) {
+                // 显示移动端摄像头按钮
+                const mobileControls = document.querySelector('.mobile-camera-controls');
+                if (mobileControls) {
+                    mobileControls.style.display = 'block';
+                }
+                
+                // 绑定按钮事件
+                const startBtn = document.getElementById('startCameraBtn');
+                const stopBtn = document.getElementById('stopCameraBtn');
+                
+                if (startBtn) {
+                    startBtn.addEventListener('click', startCamera);
+                }
+                
+                if (stopBtn) {
+                    stopBtn.addEventListener('click', stopCamera);
+                }
+            }
+        }
+        
+        async function startCamera() {
+            const statusDiv = document.getElementById('cameraStatus');
+            const startBtn = document.getElementById('startCameraBtn');
+            const stopBtn = document.getElementById('stopCameraBtn');
+            const videoElement = document.getElementById('cameraPreview');
+            
+            try {
+                statusDiv.textContent = '正在请求摄像头权限...';
+                statusDiv.style.color = '#f39c12';
+                
+                // 请求后置摄像头
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: 'environment' }, // 后置摄像头
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                };
+                
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = cameraStream;
+                videoElement.style.display = 'block';
+                
+                // 切换按钮状态
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'block';
+                
+                statusDiv.textContent = '✓ 摄像头已开启，正在采集...';
+                statusDiv.style.color = '#27ae60';
+                
+                // 开始定时捕获帧并上传
+                startFrameCapture();
+                
+            } catch (error) {
+                console.error('摄像头启动失败:', error);
+                statusDiv.textContent = '✗ 摄像头启动失败: ' + error.message;
+                statusDiv.style.color = '#e74c3c';
+                
+                if (error.name === 'NotAllowedError') {
+                    statusDiv.textContent = '✗ 权限被拒绝，请在设置中允许摄像头访问';
+                } else if (error.name === 'NotFoundError') {
+                    statusDiv.textContent = '✗ 未找到摄像头设备';
+                }
+            }
+        }
+        
+        function stopCamera() {
+            const statusDiv = document.getElementById('cameraStatus');
+            const startBtn = document.getElementById('startCameraBtn');
+            const stopBtn = document.getElementById('stopCameraBtn');
+            const videoElement = document.getElementById('cameraPreview');
+            
+            // 停止采集
+            if (captureInterval) {
+                clearInterval(captureInterval);
+                captureInterval = null;
+            }
+            
+            // 停止摄像头流
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            videoElement.style.display = 'none';
+            videoElement.srcObject = null;
+            
+            // 切换按钮状态
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            
+            statusDiv.textContent = '摄像头已关闭';
+            statusDiv.style.color = '#95a5a6';
+        }
+        
+        function startFrameCapture() {
+            const videoElement = document.getElementById('cameraPreview');
+            const canvas = document.getElementById('captureCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // 每2秒捕获一帧（可根据性能调整）
+            captureInterval = setInterval(() => {
+                if (videoElement.videoWidth > 0) {
+                    // 设置canvas尺寸
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    
+                    // 绘制当前帧
+                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    
+                    // 转换为Blob并上传
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            uploadFrameToServer(blob);
+                        }
+                    }, 'image/jpeg', 0.8); // JPEG质量80%
+                }
+            }, 2000); // 2秒间隔
+        }
+        
+        async function uploadFrameToServer(blob) {
+            try {
+                const formData = new FormData();
+                const filename = `camera_frame_${Date.now()}.jpg`;
+                formData.append('video', blob, filename);
+                
+                const response = await fetch('/upload_video', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    console.log('帧上传成功');
+                } else {
+                    console.error('帧上传失败:', data.message);
+                }
+            } catch (error) {
+                console.error('上传失败:', error);
+            }
+        }
 
         // 模型性能数据获取和更新
         async function fetchModelStats() {
