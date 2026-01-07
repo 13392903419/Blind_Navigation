@@ -170,3 +170,18 @@ pnnx*
 
 # calibration image
 calibration_*.npy
+
+# Python cache
+__pycache__/
+*.pyc
+
+
+# local scripts & workspace
+uploads/
+gputest.py
+create_test_user.py
+tansfer.py
+*.code-workspace
+*index - *.html
+*.md
+
