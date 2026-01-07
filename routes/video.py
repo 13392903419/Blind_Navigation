@@ -888,6 +888,19 @@ def stream_speech_text():
     return Response(generate(), mimetype='text/event-stream')
 
 
+@video_bp.route('/start_test', methods=['POST'])
+def start_test():
+    """激活所有模型的视频处理"""
+    global video_active, current_video_path
+
+    if not current_video_path:
+        return jsonify({"status": "error", "message": "请先上传视频文件"}), 400
+
+    video_active = True
+    print("[API Call] /start_test: 视频处理已激活")
+    return jsonify({"status": "success", "message": "视频处理已开始"})
+
+
 @video_bp.route('/upload_video', methods=['POST'])
 def upload_video():
     """处理视频上传"""
