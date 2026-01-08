@@ -9,7 +9,7 @@ SECRET_KEY = '13392903419'  # 请更改为随机字符串，用于session加密
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Qiji199263',  # 填写您的MySQL密码
+    'password': 'ws159357',  # 填写您的MySQL密码
     'db': 'blind_navigation',
     'charset': 'utf8mb4',
 }

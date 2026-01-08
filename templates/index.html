@@ -125,11 +125,11 @@
         /* 三视频卡片行布局 */
         .video-row {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: 1fr;
             gap: 1.5rem;
             width: 100%;
         }
-        
+
         .video-row .card {
             display: flex;
             flex-direction: column;
@@ -139,11 +139,22 @@
         /* 功能行布局（地图、上传、AI助手） */
         .function-row {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: 1fr;
             gap: 1.5rem;
             width: 100%;
         }
         
+        .sub-video-row {
+            display: flex;
+            gap: 1.5rem;
+            width: 100%;
+        }
+        .sub-video-row .card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 220px;
+        }
         .content-full {
             grid-column: 1 / -1;
         }
@@ -279,30 +290,85 @@
             background-color: #2c3e50;
             position: relative;
             width: 100%;
-            padding-top: 56.25%; /* 16:9 aspect ratio */
+            min-height: 400px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             flex-shrink: 0;
+            cursor: pointer;
         }
         
         .video-feed > * {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
         }
 
         .video-feed img {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+            position: relative;
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
             border-radius: var(--border-radius);
             transition: var(--transition);
+            display: block;
         }
-        
+
+        /* 全屏提示 */
+        .video-feed::after {
+            content: "点击全屏";
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .video-feed:hover::after {
+            opacity: 1;
+        }
+
+        /* 全屏样式 - 使用原生Fullscreen API */
+        .video-feed.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 99999; /* 提高z-index */
+            background-color: #000;
+            border-radius: 0;
+            min-height: 100vh;
+        }
+
+        .video-feed.fullscreen img {
+            max-width: 100vw;
+            max-height: 100vh;
+            width: auto;
+            height: auto;
+        }
+
+        /* 全屏时隐藏其他页面元素 */
+        body.fullscreen-active header,
+        body.fullscreen-active .container:not(.fullscreen),
+        body.fullscreen-active .content-grid:not(.fullscreen) {
+            display: none !important;
+        }
+
+        body.fullscreen-active {
+            overflow: hidden !important;
+        }
+
         .video-feed::before {
             content: "";
             position: absolute;
@@ -417,11 +483,11 @@
             cursor: pointer;
             transition: var(--transition);
         }
-        
+
         .settings-btn {
             left: 1rem;
         }
-        
+
         .help-btn {
             left: 4rem;
         }
@@ -755,19 +821,19 @@
             margin-bottom: 1rem;
             border: 1px solid #eee;
         }
-        
+
         #map {
             width: 100%;
             height: 100%;
         }
-        
+
         .location-info {
             margin-top: 1rem;
             background-color: #f8f9fa;
             border-radius: var(--border-radius);
             padding: 1rem;
         }
-        
+
         .location-item {
             display: flex;
             justify-content: space-between;
@@ -776,13 +842,13 @@
             padding-bottom: 0.5rem;
             border-bottom: 1px solid #eee;
         }
-        
+
         .location-item:last-child {
             margin-bottom: 0;
             padding-bottom: 0;
             border-bottom: none;
         }
-        
+
         .blindway-list {
             margin-top: 1rem;
             max-height: 200px;
@@ -1081,7 +1147,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-        
+
         .ai-info i {
             font-size: 1.1rem;
         }
@@ -1188,7 +1254,7 @@
             font-size: 0.9rem;
             color: #1565c0;
         }
-        
+
         .blindway-item {
             background-color: white;
             border-radius: 8px;
@@ -1201,25 +1267,25 @@
             cursor: pointer;
             transition: var(--transition);
         }
-        
+
         .blindway-item:hover {
             transform: translateX(5px);
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        
+
         .blindway-item:last-child {
             margin-bottom: 0;
         }
-        
+
         .blindway-name {
             font-weight: 500;
         }
-        
+
         .blindway-distance {
             color: var(--primary-color);
             font-weight: bold;
         }
-        
+
         .map-controls {
             position: relative;
             z-index: 2;
@@ -1227,7 +1293,7 @@
             padding: 5px 0;
             border-bottom: 1px solid #eee;
         }
-        
+
         .main-controls {
             display: flex;
             gap: 10px;
@@ -1235,7 +1301,7 @@
             flex-wrap: wrap;
             justify-content: space-between;
         }
-        
+
         .map-btn {
             padding: 10px 15px;
             background-color: #fff;
@@ -1251,11 +1317,11 @@
             transition: all 0.2s ease;
             white-space: nowrap;
         }
-        
+
         .map-btn:hover {
             background-color: #f0f0f0;
         }
-        
+
         .search-container {
             display: flex;
             align-items: center;
@@ -1265,7 +1331,7 @@
             overflow: hidden;
             min-width: 200px;
         }
-        
+
         .search-input {
             padding: 10px 15px;
             border: none;
@@ -1273,7 +1339,7 @@
             outline: none;
             font-size: 14px;
         }
-        
+
         .search-btn {
             padding: 10px 12px;
             border-radius: 0;
@@ -1281,15 +1347,15 @@
             background-color: var(--primary-color);
             color: white;
         }
-        
+
         .search-btn:hover {
             background-color: var(--primary-dark);
         }
-        
+
         .more-menu {
             position: relative;
         }
-        
+
         .more-dropdown {
             display: none;
             position: absolute;
@@ -1302,7 +1368,7 @@
             min-width: 180px;
             z-index: 3;
         }
-        
+
         .dropdown-item {
             display: flex;
             align-items: center;
@@ -1316,33 +1382,33 @@
             transition: background-color 0.2s;
             color: var(--text-color);
         }
-        
+
         .dropdown-item:hover {
             background-color: #f0f0f0;
         }
-        
+
         .dropdown-item i {
             width: 16px;
             text-align: center;
         }
-        
+
         .show-dropdown {
             display: block;
         }
-        
+
         /* 系统状态卡片样式 */
         .system-status {
             display: flex;
             flex-direction: column;
             gap: 1rem;
         }
-        
+
         .status-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1rem;
         }
-        
+
         .status-item {
             background-color: #f8f9fa;
             border-radius: 8px;
@@ -1352,28 +1418,28 @@
             align-items: center;
             transition: var(--transition);
         }
-        
+
         .status-item:hover {
             background-color: #e9ecef;
         }
-        
+
         .status-label {
             font-size: 0.9rem;
             color: #6c757d;
             margin-bottom: 0.5rem;
         }
-        
+
         .status-value {
             font-size: 1.1rem;
             font-weight: 600;
             color: var(--primary-dark);
         }
-        
+
         .quick-settings {
             display: flex;
             gap: 0.5rem;
         }
-        
+
         .quick-btn {
             flex: 1;
             background-color: var(--bg-color);
@@ -1388,22 +1454,22 @@
             justify-content: center;
             transition: var(--transition);
         }
-        
+
         .quick-btn i {
             margin-right: 0.5rem;
             color: var(--primary-color);
         }
-        
+
         .quick-btn:hover {
             background-color: var(--primary-color);
             color: white;
             border-color: var(--primary-color);
         }
-        
+
         .quick-btn:hover i {
             color: white;
         }
-        
+
         /* 语音提示优化 */
         .speech-text {
             padding: 1.5rem;
@@ -1415,7 +1481,7 @@
             min-height: 100px;
             position: relative;
         }
-        
+
         .speech-text::before {
             content: "\201C";
             position: absolute;
@@ -1425,17 +1491,17 @@
             color: rgba(0,0,0,0.1);
             line-height: 1;
         }
-        
+
         .speech-text p {
             position: relative;
             z-index: 1;
         }
-        
+
         .input-area {
             display: flex;
             gap: 0.5rem;
         }
-        
+
         .input-area input[type="text"] {
             flex: 1;
             padding: 1rem;
@@ -1445,12 +1511,12 @@
             outline: none;
             transition: var(--transition);
         }
-        
+
         .input-area input[type="text"]:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.25);
         }
-        
+
         .input-area button {
             background-color: var(--secondary-color);
             color: white;
@@ -1462,12 +1528,12 @@
             transition: var(--transition);
             white-space: nowrap;
         }
-        
+
         .input-area button:hover {
             background-color: #e64980;
             transform: translateY(-2px);
         }
-        
+
         /* 模型状态徽标 */
         .model-status-badge {
             display: inline-flex;
@@ -1478,22 +1544,22 @@
             font-weight: 500;
             margin-left: 0.5rem;
         }
-        
+
         .status-running {
             background-color: #d4edda;
             color: #155724;
         }
-        
+
         .status-idle {
             background-color: #fff3cd;
             color: #856404;
         }
-        
+
         .status-placeholder {
             background-color: #e7e7e7;
             color: #6c757d;
         }
-        
+
         .model-meta-info {
             display: flex;
             justify-content: space-around;
@@ -1503,24 +1569,24 @@
             margin-top: 0.75rem;
             font-size: 0.85rem;
         }
-        
+
         .meta-item {
             display: flex;
             flex-direction: column;
             align-items: center;
         }
-        
+
         .meta-label {
             color: #6c757d;
             font-size: 0.75rem;
             margin-bottom: 0.25rem;
         }
-        
+
         .meta-value {
             color: var(--primary-dark);
             font-weight: 600;
         }
-        
+
         .model-path {
             font-size: 0.75rem;
             color: #6c757d;
@@ -1530,32 +1596,32 @@
             border-radius: 6px;
             font-family: 'Courier New', monospace;
         }
-        
+
         /* 响应式设计优化 */
         @media (max-width: 1200px) {
             .function-row {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         @media (max-width: 992px) {
             .video-row {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
-        
+
         @media (max-width: 768px) {
             .video-row {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         @media (max-width: 992px) {
             .function-row {
                 grid-template-columns: 1fr;
             }
         }
-        
+
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.8rem;
@@ -1587,7 +1653,7 @@
                 width: 100%;
                 padding: 0.8rem;
             }
-            
+
             .status-grid {
                 grid-template-columns: 1fr;
             }
@@ -1602,7 +1668,7 @@
             border-bottom: 1px solid #eee;
             padding-bottom: 15px;
         }
-        
+
         .pagination-btn {
             padding: 8px 15px;
             background: #f8f9fa;
@@ -1612,21 +1678,21 @@
             font-size: 14px;
             transition: all 0.2s;
         }
-        
+
         .pagination-btn:hover {
             background: #e9ecef;
         }
-        
+
         .pagination-btn.active {
             background: var(--primary-color);
             color: white;
             border-color: var(--primary-color);
         }
-        
+
         .help-page {
             display: none;
         }
-        
+
         .help-page.active {
             display: block;
         }
@@ -1637,7 +1703,7 @@
             cursor: not-allowed;
             position: relative;
         }
-        
+
         .disabled-during-video:hover::after {
             content: "视频播放过程中无法使用该功能";
             position: absolute;
@@ -1652,7 +1718,7 @@
             white-space: nowrap;
             z-index: 1000;
         }
-        
+
         /* 目的地信息面板样式 */
         .destination-info {
             margin-top: 10px;
@@ -1662,7 +1728,7 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             border-left: 4px solid var(--primary-color);
         }
-        
+
         .destination-content {
             display: flex;
             justify-content: space-between;
@@ -1670,27 +1736,27 @@
             flex-wrap: wrap;
             gap: 10px;
         }
-        
+
         .destination-text {
             display: flex;
             align-items: center;
             gap: 8px;
             font-weight: 500;
         }
-        
+
         .destination-text i {
             color: var(--primary-color);
         }
-        
+
         .navigation-btn {
             background-color: var(--primary-color);
             color: white;
         }
-        
+
         .navigation-btn:hover {
             background-color: var(--primary-dark);
         }
-        
+
         /* 安全提示标签 */
         .safety-warning {
             display: inline-block;
@@ -1779,7 +1845,7 @@
             opacity: 0;
             transition: opacity 0.3s ease;
         }
-        
+
         .user-profile-modal.show {
             opacity: 1;
         }
@@ -1798,7 +1864,7 @@
             opacity: 0;
             transition: transform 0.4s ease, opacity 0.4s ease;
         }
-        
+
         .user-profile-modal.show .user-profile-content {
             transform: translateY(0);
             opacity: 1;
@@ -1828,7 +1894,7 @@
             color: #555;
             transform: rotate(90deg);
         }
-        
+
         .profile-close:active {
             transform: rotate(90deg) scale(0.9);
         }
@@ -1842,7 +1908,7 @@
             display: flex;
             align-items: center;
         }
-        
+
         .profile-title i {
             margin-right: 10px;
             color: var(--primary-color);
@@ -1867,7 +1933,7 @@
             display: flex;
             align-items: center;
         }
-        
+
         .profile-label i {
             margin-right: 8px;
             color: var(--primary-color);
@@ -1882,7 +1948,7 @@
             flex-grow: 1;
             word-break: break-all;
         }
-        
+
         .profile-avatar {
             width: 80px;
             height: 80px;
@@ -1925,7 +1991,7 @@
             font-size: 40px;
             margin-bottom: 10px;
         }
-        
+
         .profile-footer {
             margin-top: 20px;
             padding-top: 15px;
@@ -1934,13 +2000,13 @@
             color: #666;
             font-size: 0.85rem;
         }
-        
+
         .profile-footer a {
             color: var(--primary-color);
             text-decoration: none;
             transition: color 0.2s;
         }
-        
+
         .profile-footer a:hover {
             color: var(--primary-dark);
             text-decoration: underline;
@@ -1951,7 +2017,7 @@
             100% { transform: rotate(360deg); }
         }
         
-        /* ==================== 移动端响应式样式 ==================== */
+        /* ====== 移动端响应式样式 ====== */
         
         /* 平板竖屏及以下 (≤768px) */
         @media (max-width: 768px) {
@@ -2143,105 +2209,146 @@
 
     <div class="container">
         <div class="content-grid">
-            <!-- 三视频卡片行 -->
-            <div class="video-row">
-                <!-- 主模型 - 盲道检测 -->
-                <div class="card">
+            <!-- 测试模块 -->
+            <div class="content-full">
+                <div class="card" id="test-module-card" style="width:100%;">
                     <div class="card-title">
-                        <i class="fas fa-video"></i> 主模型 - 盲道检测
-                        <span class="model-status-badge status-running">
-                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 运行中
+                        <i class="fas fa-flask"></i> 测试模块
+                        <button style="margin-left:auto; padding:0.35rem 0.8rem; border:none; background:var(--primary-color); color:#fff; border-radius:6px; cursor:pointer; font-size:0.85rem;" onclick="startAllTests()"><i class="fas fa-play"></i> 开始测试</button>
+                    </div>
+                    <!-- 隐藏的主模型卡片保持不变 -->
+                    <div>
+
+                <!-- 主模型 -->
+                <div class="card" style="display:none;">
+                    <div class="card-title">
+                        <i class="fas fa-video"></i> 主模型（级联推理）
+                        <span class="model-status-badge status-running" id="main-model-status">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> <span id="main-model-status-text">运行中</span>
                         </span>
                     </div>
                     <div class="video-feed">
-                        <img src="{{ url_for('video.video_feed') }}" alt="主模型视频分析">
+                        <img src="{{ url_for('video.video_feed_main') }}" alt="主模型视频分析" id="main-video-feed">
                     </div>
                     <div class="model-meta-info">
                         <div class="meta-item">
                             <span class="meta-label">FPS</span>
-                            <span class="meta-value" id="model1-fps">30</span>
+                            <span class="meta-value" id="main-model-fps">--</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">延迟</span>
-                            <span class="meta-value" id="model1-latency">45ms</span>
+                            <span class="meta-value" id="main-model-latency">--</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">置信度</span>
-                            <span class="meta-value" id="model1-confidence">92%</span>
+                            <span class="meta-value" id="main-model-confidence">--</span>
                         </div>
                     </div>
                     <div class="model-path">
-                        <i class="fas fa-cube"></i> tactile_paving_train/weights/best.pt
+                        <i class="fas fa-cube"></i> <span id="main-model-path">加载中...</span>
                     </div>
                 </div>
 
-                <!-- 模型2 - 候选模型A -->
-                <div class="card">
+                    <div class="sub-video-row">
+                <!-- 模型一（盲道检测） -->
+                        <div class="card">
                     <div class="card-title">
-                        <i class="fas fa-video"></i> 模型2 - 障碍物检测
-                        <span class="model-status-badge status-placeholder">
-                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 待接入
+                        <i class="fas fa-video"></i> 模型一（盲道检测）
+                        <span class="model-status-badge" id="blind-road-status">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> <span id="blind-road-status-text">检查中...</span>
                         </span>
                     </div>
-                    <div class="video-feed">
-                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.5);">
-                            <div style="text-align: center;">
-                                <i class="fas fa-cube" style="font-size: 3rem; margin-bottom: 1rem;"></i>
-                                <p>模型训练中...</p>
+                    <div class="video-feed" id="blind-road-video-container" style="min-height: 240px;">
+                        <img id="blind_road_video_feed_img" src="" alt="盲道检测视频" style="display: none;">
+                        <div id="blind_road_video_placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.7);">
+                            <i class="fas fa-play-circle" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                    <p>等待测试开始...</p>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="model-meta-info">
+                            <div class="model-meta-info">
                         <div class="meta-item">
                             <span class="meta-label">FPS</span>
-                            <span class="meta-value">--</span>
-                        </div>
+                            <span class="meta-value" id="blind-road-fps">--</span>
+                            </div>
                         <div class="meta-item">
                             <span class="meta-label">延迟</span>
-                            <span class="meta-value">--</span>
+                            <span class="meta-value" id="blind-road-latency">--</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">置信度</span>
-                            <span class="meta-value">--</span>
+                            <span class="meta-value" id="blind-road-confidence">--</span>
                         </div>
                     </div>
                     <div class="model-path">
-                        <i class="fas fa-cube"></i> yolo/model_b_best.pt
+                        <i class="fas fa-cube"></i> <span id="blind-road-path">检查中...</span>
                     </div>
                 </div>
 
-                <!-- 模型3 - 候选模型B -->
-                <div class="card">
+                <!-- 模型二（环境感知） -->
+                        <div class="card">
                     <div class="card-title">
-                        <i class="fas fa-video"></i> 模型3 - 交通标识识别
-                        <span class="model-status-badge status-placeholder">
-                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> 待接入
+                        <i class="fas fa-video"></i> 模型二（环境感知）
+                        <span class="model-status-badge" id="environment-status">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> <span id="environment-status-text">检查中...</span>
                         </span>
                     </div>
-                    <div class="video-feed">
-                        <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.5);">
-                            <div style="text-align: center;">
-                                <i class="fas fa-cube" style="font-size: 3rem; margin-bottom: 1rem;"></i>
-                                <p>模型训练中...</p>
+                    <div class="video-feed" id="environment-video-container" style="min-height: 240px;">
+                        <img id="environment_video_feed_img" src="" alt="环境感知视频" style="display: none;">
+                        <div id="environment_video_placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.7);">
+                            <i class="fas fa-play-circle" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                    <p>等待测试开始...</p>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="model-meta-info">
+                            <div class="model-meta-info">
                         <div class="meta-item">
                             <span class="meta-label">FPS</span>
-                            <span class="meta-value">--</span>
-                        </div>
+                            <span class="meta-value" id="environment-fps">--</span>
+                            </div>
                         <div class="meta-item">
                             <span class="meta-label">延迟</span>
-                            <span class="meta-value">--</span>
+                            <span class="meta-value" id="environment-latency">--</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">置信度</span>
-                            <span class="meta-value">--</span>
+                            <span class="meta-value" id="environment-confidence">--</span>
                         </div>
                     </div>
                     <div class="model-path">
-                        <i class="fas fa-cube"></i> yolo/model_c_best.pt
+                        <i class="fas fa-cube"></i> <span id="environment-path">检查中...</span>
+                    </div>
+                </div>
+
+                <!-- 模型三（暴力检测） -->
+                        <div class="card">
+                    <div class="card-title">
+                        <i class="fas fa-video"></i> 模型三（暴力检测）
+                        <span class="model-status-badge" id="violence-status">
+                            <i class="fas fa-circle" style="font-size: 0.5rem; margin-right: 0.25rem;"></i> <span id="violence-status-text">检查中...</span>
+                        </span>
+                    </div>
+                    <div class="video-feed" id="violence-video-container" style="min-height: 240px;">
+                        <img id="violence_video_feed_img" src="" alt="暴力行为检测视频" style="display: none;">
+                        <div id="violence_video_placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.7);">
+                            <i class="fas fa-play-circle" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                    <p>等待测试开始...</p>
+                                </div>
+                            </div>
+                            <div class="model-meta-info">
+                        <div class="meta-item">
+                            <span class="meta-label">FPS</span>
+                            <span class="meta-value" id="violence-fps">--</span>
+                            </div>
+                        <div class="meta-item">
+                            <span class="meta-label">延迟</span>
+                            <span class="meta-value" id="violence-latency">--</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">置信度</span>
+                            <span class="meta-value" id="violence-confidence">--</span>
+                        </div>
+                    </div>
+                    <div class="model-path">
+                        <i class="fas fa-cube"></i> <span id="violence-path">检查中...</span>
                     </div>
                 </div>
             </div>
@@ -2251,10 +2358,11 @@
                 <div class="card">
                     <div class="card-title">
                         <i class="fas fa-cloud-upload-alt"></i> 视频上传与语音导航
-                    </div>
+        </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
                         <!-- 视频上传区 -->
                         <div>
+                            <!-- 上传表单 -->
                             <div class="upload-form" id="uploadArea" style="margin-bottom: 0;">
                                 <i class="fas fa-cloud-upload-alt upload-icon"></i>
                                 <h2 class="upload-title" style="font-size: 1.1rem;">上传视频进行分析</h2>
@@ -2263,6 +2371,9 @@
                                     <div class="file-input-wrapper">
                                         <input type="file" name="video" id="videoFile" class="file-input" accept="video/*">
                                         <label for="videoFile" class="file-input-label" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;"><i class="fas fa-file-video"></i> 选择视频</label>
+
+    </div>
+
                                     </div>
                                     <!-- 移动端摄像头按钮 -->
                                     <div class="mobile-camera-controls" style="margin-top: 0.75rem; display: none;">
@@ -2274,18 +2385,29 @@
                                         </button>
                                         <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #666; text-align: center;" id="cameraStatus"></div>
                                     </div>
+ 
                                     <div class="file-name" id="fileName" style="font-size: 0.85rem;">未选择文件</div>
                                     <button type="button" id="uploadBtn" class="upload-btn" style="padding: 0.6rem 1.2rem; font-size: 0.9rem; margin-top: 0.75rem;" onclick="uploadVideo()" disabled><i class="fas fa-upload"></i> 开始分析</button>
                                 </form>
                                 <div id="uploadStatus"></div>
                                 <div class="loader" id="uploadLoader"></div>
                             </div>
+
+                            <!-- 视频显示区域（上传后显示） -->
+                            <div class="video-feed" id="uploadVideoFeed" style="display: none; position: relative;">
+                                <img src="{{ url_for('video.video_feed_main') }}" alt="视频分析画面" id="uploadVideoImg">
+                                <button type="button" onclick="resetVideoUpload()" style="position: absolute; top: 10px; right: 10px; padding: 0.5rem 1rem; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 4px; cursor: pointer; z-index: 10;">
+                                    <i class="fas fa-times"></i> 重新上传
+                                </button>
+                            </div>
+
                             
                             <!-- 隐藏的video元素用于摄像头预览 -->
                             <video id="cameraPreview" style="display: none; width: 100%; max-height: 300px; border-radius: 8px; margin-top: 1rem;" autoplay playsinline></video>
                             <canvas id="captureCanvas" style="display: none;"></canvas>
+ 
                         </div>
-                        
+
                         <!-- 语音提示区 -->
                         <div>
                             <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--primary-dark);">
@@ -2385,7 +2507,7 @@
                         <i class="fas fa-robot"></i> 智能地图AI助手
                         <span style="font-size: 0.75rem; color: #6c757d; margin-left: 0.5rem;">ReAct模式</span>
                     </div>
-                    
+
                     <!-- AI助手界面 -->
                     <div class="ai-chat-container">
                         <div class="ai-input-area">
@@ -2394,7 +2516,7 @@
                                 <i class="fas fa-paper-plane"></i> 提问
                             </button>
                         </div>
-                        
+
                         <div class="ai-suggestions">
                             <div class="suggestion-title">💡 示例问题：</div>
                             <div class="suggestion-items">
@@ -2404,14 +2526,14 @@
                                 <span class="suggestion-item" onclick="setAiQuestion('坐标39.9,116.4是什么地方？')">坐标解析</span>
                             </div>
                         </div>
-                        
+
                         <div class="ai-info">
                             <i class="fas fa-info-circle"></i>
                             AI助手会自动分析您的问题，调用必要的地图工具，并给出自然语言回答
                         </div>
                     </div>
 
-                    
+
                     <!-- 结果显示区域 -->
                     <div class="mcp-result" id="mcpResult" style="display: none;">
                         <div class="result-header">
@@ -3118,7 +3240,7 @@
         </div>
     </div>
 
-    <script>
+<script>
         // 添加函数来检查视频播放状态
         function isVideoPlaying() {
             const videoStatus = document.getElementById('videoStatus');
@@ -3455,9 +3577,28 @@
                 if (result.status === 'success') {
                     statusDiv.textContent = '视频上传成功，正在分析...';
                     statusDiv.style.color = '#198754';
-                    // 刷新视频流
-                    const videoFeed = document.querySelector('.video-feed img');
-                    videoFeed.src = `${videoFeed.src}?t=${new Date().getTime()}`;
+
+                    // 隐藏上传表单，显示视频流
+                    const uploadArea = document.getElementById('uploadArea');
+                    const uploadVideoFeed = document.getElementById('uploadVideoFeed');
+                    const uploadVideoImg = document.getElementById('uploadVideoImg');
+
+                    if (uploadArea && uploadVideoFeed && uploadVideoImg) {
+                        uploadArea.style.display = 'none';
+                        uploadVideoFeed.style.display = 'block';
+                        // 刷新视频流
+                        uploadVideoImg.src = `{{ url_for('video.video_feed_main') }}?t=${Date.now()}`;
+                        // 通知后端开始测试并启动性能轮询
+                        fetch('/start_test',{method:'POST'}).then(()=>startModelStatsPolling());
+                    } else {
+                        // 兼容旧版本：刷新所有视频流
+                        const videoFeeds = document.querySelectorAll('.video-feed img');
+                        videoFeeds.forEach(videoFeed => {
+                            if (videoFeed.src) {
+                                videoFeed.src = `${videoFeed.src.split('?')[0]}?t=${new Date().getTime()}`;
+                            }
+                        });
+                    }
 
                     // 更新视频状态
                     updateVideoStatus('正在分析');
@@ -3964,6 +4105,110 @@
             }
         }
 
+        // 视频全屏功能 - 使用原生Fullscreen API
+        function toggleVideoFullscreen(videoFeedElement) {
+            if (!videoFeedElement) return;
+
+            // 检查是否支持原生全屏API
+            if (videoFeedElement.requestFullscreen ||
+                videoFeedElement.webkitRequestFullscreen ||
+                videoFeedElement.mozRequestFullScreen ||
+                videoFeedElement.msRequestFullscreen) {
+
+                // 使用原生全屏API
+                if (!document.fullscreenElement &&
+                    !document.webkitFullscreenElement &&
+                    !document.mozFullScreenElement &&
+                    !document.msFullscreenElement) {
+                    // 进入全屏
+                    if (videoFeedElement.requestFullscreen) {
+                        videoFeedElement.requestFullscreen();
+                    } else if (videoFeedElement.webkitRequestFullscreen) {
+                        videoFeedElement.webkitRequestFullscreen();
+                    } else if (videoFeedElement.mozRequestFullScreen) {
+                        videoFeedElement.mozRequestFullScreen();
+                    } else if (videoFeedElement.msRequestFullscreen) {
+                        videoFeedElement.msRequestFullscreen();
+                    }
+                } else {
+                    // 退出全屏
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.mozCancelFullScreen) {
+                        document.mozCancelFullScreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+            } else {
+                // 降级方案：使用CSS伪全屏（提高z-index并隐藏其他元素）
+                if (videoFeedElement.classList.contains('fullscreen')) {
+                    // 退出全屏
+                    videoFeedElement.classList.remove('fullscreen');
+                    document.body.classList.remove('fullscreen-active');
+                    document.body.style.overflow = '';
+                } else {
+                    // 进入全屏
+                    videoFeedElement.classList.add('fullscreen');
+                    document.body.classList.add('fullscreen-active');
+                    document.body.style.overflow = 'hidden';
+                }
+            }
+        }
+
+        // 监听全屏状态变化
+        function handleFullscreenChange() {
+            const videoFeeds = document.querySelectorAll('.video-feed');
+            videoFeeds.forEach(function(videoFeed) {
+                const isFullscreen = document.fullscreenElement === videoFeed ||
+                                   document.webkitFullscreenElement === videoFeed ||
+                                   document.mozFullScreenElement === videoFeed ||
+                                   document.msFullscreenElement === videoFeed;
+
+                if (!isFullscreen) {
+                    videoFeed.classList.remove('fullscreen');
+                    document.body.classList.remove('fullscreen-active');
+                    document.body.style.overflow = '';
+                }
+            });
+        }
+
+        // 为所有视频容器添加点击事件
+        function initVideoFullscreen() {
+            const videoFeeds = document.querySelectorAll('.video-feed');
+            videoFeeds.forEach(function(videoFeed) {
+                // 只对有img标签的视频容器添加点击事件
+                if (videoFeed.querySelector('img')) {
+                    videoFeed.addEventListener('click', function(e) {
+                        // 如果点击的是提示文字，不触发全屏
+                        if (e.target.tagName !== 'IMG') return;
+                        toggleVideoFullscreen(videoFeed);
+                    });
+                }
+            });
+
+            // 监听全屏状态变化事件
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+            // 添加ESC键退出全屏（原生全屏API会自动处理，这里作为备用）
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    const fullscreenElement = document.fullscreenElement ||
+                                            document.webkitFullscreenElement ||
+                                            document.mozFullScreenElement ||
+                                            document.msFullscreenElement;
+                    if (fullscreenElement) {
+                        toggleVideoFullscreen(fullscreenElement);
+                    }
+                }
+            });
+        }
+
         // 页面加载完成后初始化地图
         window.addEventListener('load', function() {
             // 等待百度地图API加载完成后再初始化
@@ -3972,10 +4217,15 @@
             });
             updateSystemStatus(); // 初始化系统状态
             startModelStatsPolling(); // 启动模型性能数据轮询
+
+            initVideoFullscreen(); // 初始化视频全屏功能
+            fetchModelsStatus(); // 获取并更新模型状态
+
             initMobileCamera(); // 初始化移动端摄像头功能
+ 
         });
         
-        // ==================== 移动端摄像头功能 ====================
+        // ====== 移动端摄像头功能 ======
         let cameraStream = null;
         let captureInterval = null;
         let isMobileDevice = false;
@@ -4128,25 +4378,303 @@
             }
         }
 
+        // 获取模型状态并更新UI
+        function startAllTests() {
+            console.log("开始测试所有模型...");
+
+            // 1. 通知后端开始处理
+            fetch('/start_test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }).then(response => response.json()).then(data => {
+                if (data.status === 'success') {
+                    console.log("后端已确认开始测试。");
+
+                    // 2. 显示视频区域并隐藏占位符
+                    const models = ['blind_road', 'environment', 'violence'];
+                    models.forEach(model => {
+                        const img = document.getElementById(`${model}_video_feed_img`);
+                        const placeholder = document.getElementById(`${model}_video_placeholder`);
+                        if (img && placeholder) {
+                            placeholder.style.display = 'none';
+                            img.style.display = 'block';
+                            // 3. 刷新视频流
+                            img.src = `/video_feed/${model}?t=${new Date().getTime()}`;
+                        }
+                    });
+
+                    // 4. 启动性能指标轮询
+        startModelStatsPolling();
+
+                } else {
+                    console.error("启动测试失败：", data.message);
+                    alert("启动测试失败，请确保已上传视频。");
+                }
+            }).catch(error => {
+                console.error('调用 /start_test API 时出错:', error);
+                alert("与服务器通信失败，无法开始测试。");
+            });
+        }
+
+        async function fetchModelsStatus() {
+            try {
+                const response = await fetch('/get_models_status');
+                const data = await response.json();
+
+                console.log('模型状态数据:', data);
+
+                if (data.status === 'success' && data.models) {
+                    // 更新主模型状态
+                    if (data.models.main) {
+                        console.log('更新主模型状态:', data.models.main);
+                        updateMainModelStatus(data.models.main);
+                    }
+                    // 更新板块二模型状态
+                    if (data.models.blind_road) {
+                        console.log('更新盲道检测模型状态:', data.models.blind_road);
+                        updateBlindRoadModelStatus(data.models.blind_road);
+                    }
+                    if (data.models.environment) {
+                        console.log('更新环境感知模型状态:', data.models.environment);
+                        updateEnvironmentModelStatus(data.models.environment);
+                    }
+                    if (data.models.violence) {
+                        console.log('更新暴力行为检测模型状态:', data.models.violence);
+                        updateViolenceModelStatus(data.models.violence);
+                    }
+                }
+            } catch (error) {
+                console.error('获取模型状态失败:', error);
+            }
+        }
+
+        // 更新主模型状态
+        function updateMainModelStatus(mainData) {
+            const statusBadge = document.getElementById('main-model-status');
+            const statusText = document.getElementById('main-model-status-text');
+            const modelPath = document.getElementById('main-model-path');
+
+            if (statusBadge && statusText) {
+                if (mainData.loaded && mainData.status === 'running') {
+                    statusBadge.className = 'model-status-badge status-running';
+                    statusText.textContent = '运行中';
+                } else {
+                    statusBadge.className = 'model-status-badge status-placeholder';
+                    statusText.textContent = '待接入';
+                }
+            }
+
+            if (modelPath) {
+                if (mainData.components) {
+                    const components = [];
+                    if (mainData.components.blind_road && mainData.components.blind_road.loaded) {
+                        const path = mainData.components.blind_road.path;
+                        if (path) {
+                            const pathParts = path.split(/[/\\]/);
+                            components.push(pathParts[pathParts.length - 1] || path);
+                        }
+                    }
+                    if (mainData.components.environment && mainData.components.environment.loaded) {
+                        const path = mainData.components.environment.path;
+                        if (path) {
+                            const pathParts = path.split(/[/\\]/);
+                            components.push(pathParts[pathParts.length - 1] || path);
+                        }
+                    }
+                    if (mainData.components.violence && mainData.components.violence.loaded) {
+                        const path = mainData.components.violence.path;
+                        if (path) {
+                            const pathParts = path.split(/[/\\]/);
+                            components.push(pathParts[pathParts.length - 1] || path);
+                        }
+                    }
+                    modelPath.textContent = components.length > 0 ? components.join(' + ') : '主模型（级联推理）';
+                } else {
+                    // 如果没有components数据，显示默认值
+                    modelPath.textContent = '主模型（级联推理）';
+                }
+            }
+        }
+
+        // 更新盲道检测模型状态
+        function updateBlindRoadModelStatus(modelData) {
+            const statusBadge = document.getElementById('blind-road-status');
+            const statusText = document.getElementById('blind-road-status-text');
+            const placeholder = document.getElementById('blind-road-placeholder');
+            const placeholderText = document.getElementById('blind-road-placeholder-text');
+            const videoImg = document.getElementById('blind-road-video-img');
+            const modelPath = document.getElementById('blind-road-path');
+
+            if (statusBadge && statusText) {
+                if (modelData.loaded && modelData.status === 'running') {
+                    statusBadge.className = 'model-status-badge status-running';
+                    statusText.textContent = '运行中';
+                    if (placeholder) placeholder.style.display = 'none';
+                    if (videoImg) videoImg.style.display = 'block';
+                } else {
+                    statusBadge.className = 'model-status-badge status-placeholder';
+                    statusText.textContent = '待接入';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '模型未加载';
+                }
+            }
+
+            if (modelPath) {
+                if (modelData.path) {
+                    const pathParts = modelData.path.split(/[/\\]/);
+                    modelPath.textContent = pathParts[pathParts.length - 1] || modelData.path;
+                } else {
+                    modelPath.textContent = 'blind_road_best.pt';
+                }
+            }
+        }
+
+        // 更新环境感知模型状态
+        function updateEnvironmentModelStatus(modelData) {
+            const statusBadge = document.getElementById('environment-status');
+            const statusText = document.getElementById('environment-status-text');
+            const placeholder = document.getElementById('environment-placeholder');
+            const placeholderText = document.getElementById('environment-placeholder-text');
+            const videoImg = document.getElementById('environment-video-img');
+            const modelPath = document.getElementById('environment-path');
+
+            if (statusBadge && statusText) {
+                if (modelData.loaded && modelData.status === 'running') {
+                    statusBadge.className = 'model-status-badge status-running';
+                    statusText.textContent = '运行中';
+                    if (placeholder) placeholder.style.display = 'none';
+                    if (videoImg) videoImg.style.display = 'block';
+                } else {
+                    statusBadge.className = 'model-status-badge status-placeholder';
+                    statusText.textContent = '待接入';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '模型未加载';
+                }
+            }
+
+            if (modelPath) {
+                if (modelData.path) {
+                    const pathParts = modelData.path.split(/[/\\]/);
+                    modelPath.textContent = pathParts[pathParts.length - 1] || modelData.path;
+                } else {
+                    modelPath.textContent = 'environment_model.pt';
+                }
+            }
+        }
+
+        // 更新暴力行为检测模型状态
+        function updateViolenceModelStatus(modelData) {
+            const statusBadge = document.getElementById('violence-status');
+            const statusText = document.getElementById('violence-status-text');
+            const placeholder = document.getElementById('violence-placeholder');
+            const placeholderText = document.getElementById('violence-placeholder-text');
+            const videoImg = document.getElementById('violence-video-img');
+            const modelPath = document.getElementById('violence-path');
+
+            if (statusBadge && statusText) {
+                if (modelData.loaded && modelData.status === 'running') {
+                    statusBadge.className = 'model-status-badge status-running';
+                    statusText.textContent = '运行中';
+                    if (placeholder) placeholder.style.display = 'none';
+                    if (videoImg) videoImg.style.display = 'block';
+                } else {
+                    statusBadge.className = 'model-status-badge status-placeholder';
+                    statusText.textContent = '待接入';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '模型未加载';
+                }
+            }
+
+            if (modelPath) {
+                if (modelData.path) {
+                    const pathParts = modelData.path.split(/[/\\]/);
+                    modelPath.textContent = pathParts[pathParts.length - 1] || modelData.path;
+                } else {
+                    modelPath.textContent = 'violence_model.pt';
+                }
+            }
+        }
+
         // 模型性能数据获取和更新
+        // 重新上传视频
+        function resetVideoUpload() {
+            const uploadArea = document.getElementById('uploadArea');
+            const uploadVideoFeed = document.getElementById('uploadVideoFeed');
+            const fileInput = document.getElementById('videoFile');
+            const fileName = document.getElementById('fileName');
+            const uploadStatus = document.getElementById('uploadStatus');
+
+            if (uploadArea && uploadVideoFeed) {
+                uploadArea.style.display = 'block';
+                uploadVideoFeed.style.display = 'none';
+            }
+
+            if (fileInput) fileInput.value = '';
+            if (fileName) fileName.textContent = '未选择文件';
+            if (uploadStatus) uploadStatus.textContent = '';
+
+            // 重置上传按钮
+            const uploadBtn = document.getElementById('uploadBtn');
+            if (uploadBtn) uploadBtn.disabled = true;
+        }
+
         async function fetchModelStats() {
             try {
-                const response = await fetch('/get_model_stats');
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    updateModelDisplay(data);
+                // 获取所有模型的统计信息
+                const [mainResponse, blindRoadResponse, environmentResponse, violenceResponse] = await Promise.all([
+                    fetch('/get_model_stats/main'),
+                    fetch('/get_model_stats/blind_road'),
+                    fetch('/get_model_stats/environment'),
+                    fetch('/get_model_stats/violence')
+                ]);
+
+                const blindRoadData = await blindRoadResponse.json();
+                const environmentData = await environmentResponse.json();
+                const violenceData = await violenceResponse.json();
+
+                if (mainData.status === 'success') {
+                    updateModelDisplay('main', mainData);
+                }
+                if (blindRoadData.status === 'success') {
+                    updateModelDisplay('blind-road', blindRoadData);
+                }
+                if (environmentData.status === 'success') {
+                    updateModelDisplay('environment', environmentData);
+                }
+                if (violenceData.status === 'success') {
+                    updateModelDisplay('violence', violenceData);
                 }
             } catch (error) {
                 console.error('获取模型性能数据失败:', error);
             }
         }
 
-        function updateModelDisplay(data) {
-            const fpsElement = document.getElementById('model1-fps');
-            const latencyElement = document.getElementById('model1-latency');
-            const confidenceElement = document.getElementById('model1-confidence');
-            
+        function updateModelDisplay(modelType, data) {
+            let fpsElement, latencyElement, confidenceElement;
+
+            if (modelType === 'main') {
+                fpsElement = document.getElementById('main-model-fps');
+                latencyElement = document.getElementById('main-model-latency');
+                confidenceElement = document.getElementById('main-model-confidence');
+            } else if (modelType === 'blind-road') {
+                fpsElement = document.getElementById('blind-road-fps');
+                latencyElement = document.getElementById('blind-road-latency');
+                confidenceElement = document.getElementById('blind-road-confidence');
+            } else if (modelType === 'environment') {
+                fpsElement = document.getElementById('environment-fps');
+                latencyElement = document.getElementById('environment-latency');
+                confidenceElement = document.getElementById('environment-confidence');
+            } else if (modelType === 'violence') {
+                fpsElement = document.getElementById('violence-fps');
+                latencyElement = document.getElementById('violence-latency');
+                confidenceElement = document.getElementById('violence-confidence');
+            }
+
             if (fpsElement && latencyElement && confidenceElement) {
                 if (data.active) {
                     // 显示实时数据
@@ -4644,7 +5172,7 @@
             // 触发重绘以确保transition正常工作
             modal.offsetHeight;
             modal.classList.add('show');
-            
+
             document.getElementById('profileLoader').style.display = 'flex';
             document.getElementById('profileContent').style.display = 'none';
             document.getElementById('profileError').style.display = 'none';
@@ -4676,15 +5204,15 @@
         function closeUserProfile() {
             const modal = document.getElementById('userProfileModal');
             modal.classList.remove('show');
-            
+
             // 等待动画完成后隐藏模态框
             setTimeout(() => {
                 modal.style.display = 'none';
             }, 300);
         }
 
-        // ========== 智能地图AI助手功能 ==========
-        
+        // === 智能地图AI助手功能 ===
+
         // 设置AI问题
         function setAiQuestion(question) {
             document.getElementById('aiQuestion').value = question;
@@ -4694,16 +5222,16 @@
         async function askAiAssistant() {
             const questionInput = document.getElementById('aiQuestion');
             const question = questionInput.value.trim();
-            
+
             if (!question) {
                 alert('请输入您的问题');
                 return;
             }
-            
+
             try {
                 // 显示处理中状态
                 showMcpResult('🤖 AI正在思考并调用必要的地图工具...', false, 'AI助手工作中', '');
-                
+
                 // 获取用户当前位置（如果可用）
                 let userLocation = null;
                 if (currentPosition) {
@@ -4712,7 +5240,7 @@
                         lng: currentPosition.lng
                     };
                 }
-                
+
                 const response = await fetch('/ai_map_assistant', {
                     method: 'POST',
                     headers: {
@@ -4723,33 +5251,33 @@
                         user_location: userLocation
                     })
                 });
-                
+
                 const result = await response.json();
                 console.log('AI助手返回结果:', result);
-                
+
                 if (result.status === 'success' && result.type === 'answer') {
                     // AI给出最终答案
                     const title = `💬 AI助手回复`;
                     let displayHtml = `<div style="font-size: 1.1rem; line-height: 1.6; color: #212529;">${result.content}</div>`;
-                    
+
                     // 显示工具调用历史
                     if (result.tool_history && result.tool_history.length > 0) {
                         displayHtml += '<br><div style="margin-top: 1rem; padding: 1rem; background-color: #f8f9fa; border-radius: 8px;">';
                         displayHtml += `<div style="font-weight: bold; margin-bottom: 0.5rem; color: #495057;">🔧 执行了 ${result.tool_history.length} 个工具调用：</div>`;
                         result.tool_history.forEach((item, index) => {
-                            const icon = item.action === 'geocoding' ? '📍' : 
-                                        item.action === 'route_planning' ? '🗺️' : 
+                            const icon = item.action === 'geocoding' ? '📍' :
+                                        item.action === 'route_planning' ? '🗺️' :
                                         item.action === 'search_places' ? '🔍' : '🛠️';
                             const status = item.result.success ? '<span style="color: #28a745;">✓</span>' : '<span style="color: #dc3545;">✗</span>';
                             displayHtml += `<div style="margin: 0.3rem 0; font-size: 0.9rem;">${status} ${icon} ${item.action}</div>`;
                         });
                         displayHtml += `</div>`;
-                        
+
                         displayHtml += `<div style="margin-top: 0.5rem; color: #6c757d; font-size: 0.85rem;">共迭代 ${result.iterations} 轮</div>`;
                     }
-                    
+
                     showMcpResult(displayHtml, true, title, result.reasoning || '');
-                    
+
                 } else if (result.status === 'error') {
                     // 错误处理
                     let errorHtml = `<strong>❌ ${result.message}</strong>`;
@@ -4760,10 +5288,10 @@
                 } else {
                     showMcpResult(result.message || '未知响应', false, 'AI助手回复', '');
                 }
-                
+
                 // 清空输入框
                 questionInput.value = '';
-                
+
             } catch (error) {
                 showMcpResult(`请求失败: ${error.message}`, false, 'AI助手错误', '');
                 console.error('AI助手请求失败:', error);
@@ -4789,10 +5317,10 @@
             const contentDiv = document.getElementById('mcpResultContent');
             const titleDiv = document.getElementById('resultTitle');
             const explanationDiv = document.getElementById('aiExplanation');
-            
+
             // 设置标题
             titleDiv.textContent = title;
-            
+
             // 格式化显示数据
             let displayText = '';
             if (typeof data === 'object') {
@@ -4800,10 +5328,10 @@
             } else {
                 displayText = String(data);
             }
-            
+
             contentDiv.innerHTML = displayText;
             contentDiv.className = 'result-content ' + (isSuccess ? 'result-success' : 'result-error');
-            
+
             // 显示AI解释（如果有）
             if (explanation) {
                 explanationDiv.innerHTML = `<strong>AI解释：</strong>${explanation}`;
@@ -4811,9 +5339,9 @@
             } else {
                 explanationDiv.style.display = 'none';
             }
-            
+
             resultDiv.style.display = 'block';
-            
+
             // 滚动到结果区域
             resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -4825,6 +5353,6 @@
 
         // 页面加载时初始化MCP模块
         // API密钥现在直接配置在后端，无需前端处理
-    </script>
+</script>
 </body>
 </html>
