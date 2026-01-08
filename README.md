@@ -318,10 +318,11 @@ Copyright (c) 2025 wink-wink-wink555
 
 You are free to use, modify, and distribute this software for personal or commercial purposes, provided that the copyright notice and permission notice are included in all copies.
 
-For detailed terms, please refer to the [LICENSE](LICENSE) file.
+For detailed terms, please refer to the [LICENSE](LICENSE) file
 
 ---
 
 ⭐ If this project helps you, please give it a star!
+
 
 
