@@ -239,6 +239,14 @@ stats_map = {
     'violence': violence_model_stats
 }
 
+def update_stats(tag, fps, latency_ms, confidence):
+    """写入各模型实时性能数据"""
+    d = stats_map[tag]
+    d['fps'] = int(fps)
+    d['latency'] = int(latency_ms)
+    d['confidence'] = int(confidence)
+    d['last_update'] = time.time()
+
 frame_times = []  # 存储最近的帧时间戳
 max_frame_history = 30  # 保留最近30帧的数据
 
@@ -248,6 +256,12 @@ frame_queue = queue.Queue(maxsize=20)
 blind_queue = queue.Queue(maxsize=5)
 env_queue = queue.Queue(maxsize=5)
 vio_queue = queue.Queue(maxsize=5)    # 读帧线程 → 推理线程
+# ---------- Combiner 额外队列 ----------
+from collections import defaultdict
+
+combined_queue = queue.Queue(maxsize=30)   # 三模型结果汇聚→合成线程
+combine_buffer = defaultdict(dict)         # 临时缓存同一帧三模型结果
+# ---------------------------------------
 result_queue = queue.Queue(maxsize=3)   # 推理线程 → 显示线程
 
 # 线程控制字典
@@ -289,6 +303,12 @@ def clear_queue(q):
         try:
             q.get_nowait()
         except queue.Empty:
+            # 如果系统仍在运行则继续等待，避免生成器提前退出
+            if thread_control.get('running', False):
+                continue
+            else:
+                time.sleep(0.5)
+                continue
             break
 
 def resize_frame(frame, max_size=MAX_FRAME_SIZE):
@@ -307,6 +327,142 @@ def resize_frame(frame, max_size=MAX_FRAME_SIZE):
     return resized, scale
 
 
+# ============== 通用推理线程函数 (Patch B) ==============
+
+def push_inference(in_q, model, tag, color):
+    """从专用队列取帧→推理→绘制→写 result_queue 并更新 stats"""
+    fps_buf = []
+    while thread_control['running']:
+        try:
+            item = in_q.get(timeout=1.0)
+        except queue.Empty:
+            if not thread_control['reader_alive']:
+                break
+            continue
+
+        frame = item['frame']
+        t0 = time.time()
+        results = model.predict(frame, verbose=False)
+        if tag == 'violence' and results:
+            print('[DEBUG-push]', 'cls:', [int(b.cls[0]) for b in results[0].boxes], 'names:', getattr(results[0], 'names', {}))
+        latency = (time.time() - t0) * 1000
+
+        confs = []
+        if results:
+            for box in results[0].boxes:
+                xyxy = box.xyxy[0].cpu().numpy().astype(int)
+                x1, y1, x2, y2 = xyxy
+                conf = float(box.conf[0])
+                confs.append(conf)
+
+        # FPS 计算
+        fps_buf.append(time.time())
+        if len(fps_buf) > 30:
+            fps_buf.pop(0)
+        fps = len(fps_buf)/(fps_buf[-1]-fps_buf[0]) if len(fps_buf)>=2 else 0
+
+        update_stats(tag, fps, latency, np.mean(confs)*100 if confs else 0)
+        # ---------- 将结果发送给 combiner_worker ----------
+        try:
+            combined_queue.put_nowait({
+                'fid': item.get('fid', 0),
+                'frame': frame,               # 原图副本
+                'tag': tag,                   # blind_road / environment / violence
+                'boxes': results[0].boxes if results else None,
+                'names': getattr(results[0], 'names', {}) if results else {}
+            })
+        except queue.Full:
+            pass
+
+# =============== Combiner 线程 ===============
+def combiner_worker():
+    """
+    收集三模型结果，同帧绘制后写入 result_queue
+    """
+    while thread_control['running']:
+        try:
+            res = combined_queue.get(timeout=1.0)
+        except queue.Empty:
+            # 读帧线程已死且队列空 → 退出
+            if not thread_control['reader_alive']:
+                break
+            continue
+
+        fid = res['fid']
+        buf = combine_buffer[fid]
+        buf.setdefault('frame', res['frame'])
+        buf[res['tag']] = res
+
+        # 三模型结果到齐
+        if all(k in buf for k in ('blind_road', 'environment', 'violence')):
+            frame = buf['frame']
+
+            # 盲道绘制
+            b_res = buf['blind_road']
+            blind_detected = False
+            if b_res['boxes'] is not None and len(b_res['boxes']) > 0:
+                for box in b_res['boxes']:
+                    x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
+                    cv2.putText(frame,f"blind:{conf:.2f}",(x1,y1-5),
+                                cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
+                blind_detected = True
+
+            # 环境感知绘制
+            e_res = buf['environment']
+            if e_res['boxes'] is not None:
+                for box in e_res['boxes']:
+                    x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cls = int(box.cls[0])
+                    if blind_detected:
+                        label = "obstacle"
+                        color = (0,0,255)
+                    else:
+                        label = e_res['names'].get(cls,'obj')
+                        color = (255,0,0)
+                    cv2.rectangle(frame,(x1,y1),(x2,y2),color,2)
+                    cv2.putText(frame,f"{label}:{conf:.2f}",(x1,y1-5),
+                                cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
+
+            # 暴力绘制
+            v_res = buf['violence']
+            if v_res['boxes'] is not None:
+                for box in v_res['boxes']:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cls_id = int(box.cls[0])
+                    # 优先使用 names 判断；若 names 缺失/为空则回退到 cls_id 规则
+                    name_map = v_res.get('names', {})
+                    cls_name = (name_map.get(cls_id, '') or '').lower()
+                    if cls_name:
+                        is_fight = (cls_name == 'fight')
+                    else:
+                        # 回退：按 cls_id=1 视为 fight（与测试模块一致时再保留）
+                        is_fight = (cls_id == 1)
+
+                    if is_fight:
+                        color = (0, 255, 255)
+                        label = f"FIGHT:{conf:.2f}"
+                    else:
+                        color = (0, 128, 255)
+                        label = f"NOFIGHT:{conf:.2f}"
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
+                    cv2.putText(frame, label, (x1, y1 - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            # 送给显示线程
+            try:
+                result_queue.put_nowait({'frame': frame})
+            except queue.Full:
+                pass
+            # 清缓存
+            combine_buffer.pop(fid, None)
+            # 检查是否需要退出（全部结束且队列清空）
+            if (not thread_control.get('running', False) and combined_queue.empty() and not combine_buffer):
+                break
+# =============================================
 # ==================== 线程安全包装器 ====================
 
 def safe_thread_wrapper(thread_func, thread_name):
@@ -367,6 +523,11 @@ def start_async_processing(video_path):
             raise Exception(f"无法打开视频文件: {video_path}")
         
         thread_control['video_cap'] = cap
+        # 计算视频原始FPS用于节流播放速率
+        src_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not src_fps or src_fps < 1:  
+            src_fps = 25  # 默认25fps   
+        thread_control['frame_delay'] = 1.0 / src_fps
         thread_control['running'] = True
         thread_control['error'] = None
         thread_control['reader_alive'] = False
@@ -379,17 +540,23 @@ def start_async_processing(video_path):
             name="FrameReader"
         )
         
-        # 创建并启动推理线程
-        inference_thread = threading.Thread(
-            target=safe_thread_wrapper(inference_worker, "推理线程"),
-            daemon=True,
-            name="InferenceWorker"
-        )
-        
+        # 创建并启动三模型推理线程 (Patch B)
         reader_thread.start()
-        inference_thread.start()
+        global inference_thread
+        inference_thread = None  # 不再使用单线程推理
+        threading.Thread(target=safe_thread_wrapper(
+            lambda: push_inference(blind_queue, blind_road_model, 'blind_road', (255,0,0)),
+            'BlindWorker'), daemon=True, name='BlindWorker').start()
+        threading.Thread(target=safe_thread_wrapper(
+            lambda: push_inference(env_queue, environment_model, 'environment', (0,0,255)),
+            'EnvWorker'), daemon=True, name='EnvWorker').start()
+        threading.Thread(target=safe_thread_wrapper(
+            lambda: push_inference(vio_queue, violence_model, 'violence', (0,255,255)),
+            'VioWorker'), daemon=True, name='VioWorker').start()
+        threading.Thread(target=safe_thread_wrapper(
+            combiner_worker, "Combiner"), daemon=True, name="Combiner").start()
         
-        print("[异步管道] ✓ 异步处理管道已启动")
+        print("[异步管道] ✓ 异步处理管道已启动 (三线程)")
 
 
 def stop_async_processing():
@@ -461,8 +628,16 @@ def frame_reader_worker():
         
         try:
             # 队列满时阻塞（背压机制：推理跟不上就等待）
-            frame_queue.put(frame_data, block=True, timeout=1.0)
-            
+            #frame_queue.put(frame_data, block=True, timeout=1.0)
+            # ---------- Patch A: 广播帧到三模型队列 ----------
+            for q in (blind_queue, env_queue, vio_queue):
+                try:
+                    q.put_nowait({'frame': frame.copy(),
+                                  'fid': frame_count})
+                except queue.Full:
+                    pass
+            # 始终按源 FPS 节流，避免一次性读完整段视频
+            time.sleep(thread_control.get('frame_delay', 0.04))
             # 更新读帧FPS
             if frame_count % 30 == 0:  # 每30帧统计一次
                 elapsed = time.time() - reader_start_time
@@ -470,6 +645,8 @@ def frame_reader_worker():
                 
         except queue.Full:
             performance_metrics['frame_drop_count'] += 1
+            # —— 节流：按原 FPS 读取，避免倍速 —— 
+            time.sleep(thread_control.get('frame_delay', 0.04))  # 默认0.04秒
             print(f"[读帧线程] ⚠ 队列已满，丢弃第 {frame_count} 帧")
             continue
     
@@ -775,16 +952,11 @@ def generate_frames():
                        buffer.tobytes() + b'\r\n')
                 
             except queue.Empty:
-                # 队列为空，检查线程状态
-                if not thread_control['running']:
-                    # 异步处理已停止
-                    if result_queue.empty():
-                        print("[显示线程] 队列为空且异步处理已停止，退出")
-                        break
-                    # 队列还有数据，继续消费
+             # 若还有线程在运行则继续等待，否则退出
+                if thread_control['running']:
                     continue
-                # 异步处理还在运行，继续等待
-                continue
+                else:
+                    break
                 
     except Exception as e:
         print(f"[显示线程] 异常: {e}")
@@ -907,7 +1079,7 @@ def generate_frames_legacy():
                 annotated_frame = blind_road_results[0].plot()
                 print("[主模型级联推理] 检测到盲道，使用盲道检测模型结果")
                 
-                # 同时运行环境感知模型检测障碍物（人、车等）
+                # 同时运行环境感知模型
                 if main_environment_model_loaded:
                     try:
                         environment_results = main_environment_model.predict(frame, verbose=False)
@@ -915,33 +1087,27 @@ def generate_frames_legacy():
                             env_result = environment_results[0]
                             env_boxes = env_result.boxes
                             
-                            # 环境感知模型的类别：Sidewalk, Road, Person, Automobile, Obstacle
-                            # 我们只关注障碍物类别（Person, Automobile, Obstacle），忽略Sidewalk和Road
-                            obstacle_class_names = ['person', 'automobile', 'obstacle']
-                            obstacle_class_ids = []
-                            
-                            # 获取障碍物类别的ID
-                            if hasattr(env_result, 'names'):
-                                for class_id, class_name in env_result.names.items():
-                                    if class_name.lower() in obstacle_class_names:
-                                        obstacle_class_ids.append(class_id)
-                            
-                            # 在已绘制的盲道帧上叠加绘制障碍物
+                            # 在已绘制的盲道帧上叠加绘制环境感知结果。
+                            # 若已检测到盲道 -> 全部统一标记为 obstacle；
+                            # 否则保持原 5 类标签名。
                             if env_boxes is not None and len(env_boxes) > 0:
                                 for box in env_boxes:
+                                    xyxy = box.xyxy[0]
+                                    if hasattr(xyxy, 'cpu'):
+                                        xyxy = xyxy.cpu().numpy()
+                                    x1, y1, x2, y2 = xyxy.astype(int)
+                                    conf = float(box.conf[0])
                                     cls = int(box.cls[0])
-                                    if cls in obstacle_class_ids:
-                                        xyxy = box.xyxy[0]
-                                        if hasattr(xyxy, 'cpu'):
-                                            xyxy = xyxy.cpu().numpy()
-                                        x1, y1, x2, y2 = xyxy.astype(int)
-                                        conf = float(box.conf[0])
-                                        
-                                        # 使用红色绘制障碍物
-                                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                                        label = f"{env_result.names[cls]}: {conf:.2f}"
-                                        cv2.putText(annotated_frame, label, (x1, y1 - 5), 
-                                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                                    if blind_road_detected:
+                                        label = f"obstacle: {conf:.2f}"
+                                        color = (0, 0, 255)  # red
+                                    else:
+                                        name = env_result.names.get(cls, 'obj') if hasattr(env_result, 'names') else 'obj'
+                                        label = f"{name}: {conf:.2f}"
+                                        color = (255, 0, 0)  # blue
+                                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                    cv2.putText(annotated_frame, label, (x1, y1 - 5),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                     except Exception as e:
                         print(f"[主模型级联推理] 环境感知模型推理失败: {e}")
             else:
@@ -957,7 +1123,7 @@ def generate_frames_legacy():
                 else:
                     annotated_frame = frame.copy()
             
-            # 第三步：同时运行暴力行为检测模型
+            # 第三步：同时运行暴力行为检测模型（无论是否检测到盲道都执行）
             if main_violence_model_loaded:
                 try:
                     violence_results = main_violence_model.predict(frame, verbose=False)
@@ -1626,6 +1792,18 @@ def get_model_stats():
         "confidence": main_model_stats.get('confidence', 0)
     })
 
+@video_bp.route('/get_model_stats/main', methods=['GET'])
+def get_main_stats():
+    """主模型统计直接取盲道检测 stats"""
+    d = blind_road_model_stats
+    active = (time.time() - d.get('last_update', 0)) < 3
+    return jsonify({
+        "status": "success",
+        "active": active,
+        "fps": d.get('fps', 0),
+        "latency": d.get('latency', 0),
+        "confidence": d.get('confidence', 0)
+    })
 @video_bp.route('/get_model_stats/main', methods=['GET'])
 def get_main_model_stats():
     """获取板块一主模型性能统计数据"""

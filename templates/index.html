@@ -282,27 +282,24 @@
         }
 
         .video-feed {
-            text-align: center;
-            margin: 0 auto;
-            overflow: hidden;
-            border-radius: var(--border-radius);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            background-color: #2c3e50;
             position: relative;
             width: 100%;
-            min-height: 400px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
+            padding-top: 56.25%; /* 16:9 */
+            overflow: hidden;
+            border-radius: var(--border-radius);
+            background-color: #2c3e50;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             cursor: pointer;
         }
         
-        .video-feed > * {
+        .video-feed img,
+        .video-feed video {
             position: relative;
-            max-width: 100%;
-            max-height: 100%;
+            width: 100%;
+            height: 100%;
             object-fit: contain;
+            object-position: center;
+            background-color: #2c3e50;
         }
 
         .video-feed img {
@@ -4633,6 +4630,7 @@
                     fetch('/get_model_stats/violence')
                 ]);
 
+                const mainData = await mainResponse.json();
                 const blindRoadData = await blindRoadResponse.json();
                 const environmentData = await environmentResponse.json();
                 const violenceData = await violenceResponse.json();
