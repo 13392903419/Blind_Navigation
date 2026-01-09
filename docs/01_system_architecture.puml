@@ -1,0 +1,135 @@
+@startuml 盲人导航系统架构图
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title 盲人导航系统 - 三模型融合架构
+
+' 用户层
+actor "盲人用户" as user
+
+' 前端层
+package "前端界面层" {
+    component [Web界面] as web
+    component [视频上传] as upload
+    component [实时预览] as preview
+}
+
+' 应用层
+package "Flask应用层" {
+    component [路由控制\nroutes/] as routes
+    component [认证模块\nauth.py] as auth
+    component [视频处理\nvideo.py] as video_route
+    component [地图服务\nmap.py] as map_route
+}
+
+' 核心处理层
+package "核心处理层" {
+    ' 视频处理流水线
+    queue "视频帧队列\nframe_queue" as frame_q
+    queue "检测结果队列\nresult_queue" as result_q
+    
+    component [读帧线程] as reader
+    component [推理线程] as inference
+    component [显示线程] as display
+}
+
+' AI模型层
+package "AI模型层 (三模型融合)" {
+    component [模型1: 盲道检测\nYOLO (yolo/best.pt)] as model1 #LightBlue
+    component [模型2: 场景分类\n(待集成)] as model2 #LightGreen
+    component [模型3: 冲突检测\n(待集成)] as model3 #LightCoral
+    
+    component [模型融合逻辑\nModel Fusion] as fusion #Gold
+}
+
+' 决策层
+package "智能决策层" {
+    component [条件判断引擎] as decision
+    note right of decision
+        if 检测到盲道:
+            其他物体 = obstacle
+        else:
+            启用模型2场景分类
+        
+        if 检测到fight:
+            发出预警
+    end note
+}
+
+' AI服务层
+package "AI服务层" {
+    component [Qwen语音模型\n(Ollama)] as qwen #Lavender
+    component [语音合成\npyttsx3] as tts
+    component [百度地图API] as baidu
+}
+
+' 数据层
+database "SQLite数据库" {
+    storage [用户数据] as user_db
+    storage [检测历史] as history_db
+}
+
+' 配置层
+component [配置管理\nconfig.py] as config
+
+' ==================== 数据流关系 ====================
+
+' 用户交互流
+user --> web : 1.访问系统
+web --> upload : 2.上传视频
+upload --> video_route : 3.提交处理请求
+
+' 视频处理流水线
+video_route --> reader : 4.启动处理
+reader --> frame_q : 5.读取帧
+frame_q --> inference : 6.推理队列
+
+' AI模型调用流程
+inference --> model1 : 7.盲道检测
+model1 --> decision : 8.检测结果
+
+decision --> model2 : 9a.无盲道→场景分类
+decision --> fusion : 9b.有盲道→标记obstacle
+
+inference -down-> model3 : 10.并行冲突检测
+model3 --> decision : 11.fight预警
+
+' 融合与决策
+model2 --> fusion : 12.分类结果
+decision --> fusion : 13.条件判断
+fusion --> result_q : 14.融合结果
+
+' 结果处理
+result_q --> display : 15.显示队列
+display --> qwen : 16.生成语音指令
+qwen --> tts : 17.语音合成
+tts --> preview : 18.播放导航音频
+display --> preview : 19.视频流输出
+
+' 地图服务
+video_route --> baidu : 20.位置查询
+baidu --> qwen : 21.路径规划
+
+' 数据持久化
+auth --> user_db : 认证数据
+inference --> history_db : 检测记录
+
+' 配置依赖
+video_route ..> config : 读取配置
+qwen ..> config : 模型参数
+
+' 最终输出
+preview --> user : 实时视频+语音导航
+
+' 图例
+legend right
+    |= 颜色 |= 说明 |
+    | <#LightBlue> | 已实现模型 |
+    | <#LightGreen> | 待集成模型 |
+    | <#LightCoral> | 待集成模型 |
+    | <#Gold> | 核心融合逻辑 |
+    | <#Lavender> | AI服务 |
+endlegend
+
+@enduml

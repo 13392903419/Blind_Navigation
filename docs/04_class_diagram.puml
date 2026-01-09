@@ -1,0 +1,310 @@
+@startuml 系统类图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 核心类图
+
+' ==================== Flask应用层 ====================
+package "Flask Application" {
+    class FlaskApp {
+        + app: Flask
+        + secret_key: str
+        + upload_folder: str
+        --
+        + create_app(): Flask
+        + register_blueprints()
+        + init_database()
+    }
+    
+    class AuthBlueprint {
+        - auth_bp: Blueprint
+        --
+        + login()
+        + register()
+        + logout()
+        + forget_password()
+    }
+    
+    class VideoBlueprint {
+        - video_bp: Blueprint
+        - model: YOLO
+        - device: str
+        --
+        + upload_video()
+        + video_stream()
+        + detect_objects()
+        + process_frame()
+    }
+    
+    class MapBlueprint {
+        - map_bp: Blueprint
+        --
+        + get_route()
+        + search_location()
+    }
+}
+
+' ==================== 核心处理层 ====================
+package "Core Processing" {
+    class VideoProcessor {
+        - frame_queue: Queue
+        - result_queue: Queue
+        - stop_event: Event
+        --
+        + start_processing()
+        + reader_thread()
+        + inference_thread()
+        + display_thread()
+        + stop_processing()
+    }
+    
+    class FrameQueue {
+        - maxsize: int
+        - items: List[Frame]
+        --
+        + put(frame: np.ndarray)
+        + get(): np.ndarray
+        + empty(): bool
+    }
+    
+    class ResultQueue {
+        - maxsize: int
+        - items: List[DetectionResult]
+        --
+        + put(result: dict)
+        + get(): dict
+    }
+}
+
+' ==================== AI模型层 ====================
+package "AI Models" {
+    abstract class BaseModel {
+        # model_path: str
+        # device: str
+        # confidence: float
+        --
+        + {abstract} load_model()
+        + {abstract} predict(frame: np.ndarray)
+        + to_device(device: str)
+    }
+    
+    class YOLOBlindPathModel {
+        - model: YOLO
+        - classes: List[str]
+        --
+        + load_model()
+        + predict(frame: np.ndarray): DetectionResult
+        + detect_blind_path(frame): bool
+        + get_obstacles(frame): List[Obstacle]
+    }
+    
+    class SceneClassificationModel {
+        - model: TorchModel
+        - categories: List[str]
+        --
+        + load_model()
+        + predict(frame: np.ndarray): SceneResult
+        + classify_scene(frame): str
+    }
+    
+    class FightDetectionModel {
+        - model: TorchModel
+        - threshold: float
+        --
+        + load_model()
+        + predict(frame: np.ndarray): FightResult
+        + detect_fight(frame): bool
+    }
+    
+    class ModelFusion {
+        - model1: YOLOBlindPathModel
+        - model2: SceneClassificationModel
+        - model3: FightDetectionModel
+        --
+        + fuse_results(results: List): FusedResult
+        + apply_conditions(blind_path: bool): dict
+        + merge_boxes(boxes: List): List
+    }
+}
+
+' ==================== 决策层 ====================
+package "Decision Engine" {
+    class DecisionEngine {
+        - rules: Dict[str, Rule]
+        - priority_queue: PriorityQueue
+        --
+        + add_rule(rule: Rule)
+        + evaluate(detection_result: dict): Decision
+        + apply_blind_path_rule(result): dict
+        + check_fight_warning(result): bool
+    }
+    
+    class Rule {
+        + condition: str
+        + action: str
+        + priority: int
+        --
+        + match(context: dict): bool
+        + execute(context: dict): Action
+    }
+    
+    enum RuleType {
+        BLIND_PATH_DETECTED
+        NO_BLIND_PATH
+        FIGHT_DETECTED
+        OBSTACLE_NEAR
+    }
+}
+
+' ==================== AI服务层 ====================
+package "AI Services" {
+    class QwenVoiceService {
+        - client: ollama.Client
+        - model: str
+        --
+        + generate_instruction(detection: dict): str
+        + format_prompt(data: dict): str
+        + call_model(prompt: str): str
+    }
+    
+    class TextToSpeechService {
+        - engine: pyttsx3.Engine
+        - speech_queue: Queue
+        - voice_settings: dict
+        --
+        + speak(text: str, settings: dict)
+        + speech_worker()
+        + set_voice(voice_id: str)
+        + set_rate(rate: int)
+    }
+    
+    class BaiduMapService {
+        - ak: str
+        - base_url: str
+        --
+        + search_location(query: str): Location
+        + get_route(start, end): Route
+        + geocode(address: str): Coordinates
+    }
+}
+
+' ==================== 数据模型层 ====================
+package "Data Models" {
+    class User {
+        + id: int
+        + username: str
+        + email: str
+        + password_hash: str
+        + created_at: datetime
+        --
+        + verify_password(password: str): bool
+        + to_dict(): dict
+    }
+    
+    class DetectionResult {
+        + frame_id: int
+        + timestamp: datetime
+        + blind_path_detected: bool
+        + obstacles: List[Obstacle]
+        + fight_detected: bool
+        + scene_type: str
+        --
+        + to_json(): str
+        + save_to_db()
+    }
+    
+    class Obstacle {
+        + type: str
+        + bbox: Tuple[int, int, int, int]
+        + confidence: float
+        + distance: float
+        + direction: str
+        --
+        + get_relative_position(): str
+    }
+}
+
+' ==================== 工具模块 ====================
+package "Utils" {
+    class Decorators {
+        + {static} login_required(f)
+        + {static} admin_required(f)
+    }
+    
+    class VideoUtils {
+        + {static} allowed_file(filename: str): bool
+        + {static} create_error_frame(msg: str): np.ndarray
+        + {static} create_info_frame(msg: str): np.ndarray
+    }
+    
+    class VoiceUtils {
+        + {static} get_available_voices(): List[dict]
+        + {static} speak(text: str, settings: dict)
+        + {static} get_prompt_template(): str
+    }
+}
+
+' ==================== 关系定义 ====================
+
+' Flask应用层关系
+FlaskApp *-- AuthBlueprint
+FlaskApp *-- VideoBlueprint
+FlaskApp *-- MapBlueprint
+
+' 视频处理层关系
+VideoBlueprint --> VideoProcessor : uses
+VideoProcessor *-- FrameQueue
+VideoProcessor *-- ResultQueue
+
+' AI模型层关系
+BaseModel <|-- YOLOBlindPathModel
+BaseModel <|-- SceneClassificationModel
+BaseModel <|-- FightDetectionModel
+
+ModelFusion o-- YOLOBlindPathModel
+ModelFusion o-- SceneClassificationModel
+ModelFusion o-- FightDetectionModel
+
+VideoProcessor --> ModelFusion : uses
+
+' 决策层关系
+DecisionEngine *-- Rule
+DecisionEngine ..> RuleType : uses
+ModelFusion --> DecisionEngine : sends results
+
+' AI服务层关系
+VideoProcessor --> QwenVoiceService : calls
+QwenVoiceService --> TextToSpeechService : uses
+VideoProcessor --> BaiduMapService : queries
+
+' 数据模型关系
+DetectionResult *-- Obstacle
+VideoProcessor --> DetectionResult : creates
+AuthBlueprint --> User : manages
+
+' 工具模块关系
+VideoBlueprint ..> Decorators : uses
+VideoBlueprint ..> VideoUtils : uses
+QwenVoiceService ..> VoiceUtils : uses
+
+' 注释
+note top of ModelFusion
+    **核心融合逻辑**
+    if blind_path_detected:
+        mark_all_as_obstacle()
+    else:
+        enable_scene_classification()
+    
+    if fight_detected:
+        trigger_emergency_alert()
+end note
+
+note top of DecisionEngine
+    **规则引擎**
+    按优先级执行规则:
+    1. Fight预警 (最高)
+    2. 盲道导航
+    3. 场景识别
+end note
+
+@enduml

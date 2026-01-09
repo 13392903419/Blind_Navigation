@@ -1,0 +1,166 @@
+@startuml 时序图 - 视频处理流程
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 三模型检测时序图
+
+actor "盲人用户" as user
+participant "Web界面" as web
+participant "VideoBlueprint" as video_bp
+participant "VideoProcessor" as processor
+participant "FrameQueue" as frame_q
+participant "YOLOModel\n(模型1)" as yolo
+participant "SceneModel\n(模型2)" as scene
+participant "FightModel\n(模型3)" as fight
+participant "ModelFusion" as fusion
+participant "DecisionEngine" as decision
+participant "QwenService" as qwen
+participant "TTS服务" as tts
+participant "ResultQueue" as result_q
+database "检测历史" as db
+
+' ==================== 视频上传阶段 ====================
+user -> web : 1. 上传视频文件
+web -> video_bp : 2. POST /upload_video
+activate video_bp
+
+video_bp -> video_bp : 3. 验证文件格式
+video_bp -> processor : 4. 创建处理任务
+activate processor
+
+' ==================== 初始化阶段 ====================
+processor -> frame_q : 5. 创建帧队列
+processor -> result_q : 6. 创建结果队列
+
+processor -> processor : 7. 启动reader_thread()
+processor -> processor : 8. 启动inference_thread()
+processor -> processor : 9. 启动display_thread()
+
+video_bp --> web : 10. 返回处理ID
+web --> user : 11. 显示"处理中..."
+
+' ==================== 帧读取循环 ====================
+loop 每帧处理循环
+    processor -> processor : 12. 读取视频帧
+    processor -> frame_q : 13. put(frame)
+    note right
+        异步队列
+        缓冲30帧
+    end note
+    
+    ' ==================== 推理线程并行处理 ====================
+    processor -> frame_q : 14. get() 获取帧
+    
+    par 并行推理
+        processor -> yolo : 15a. predict(frame)
+        activate yolo
+        yolo -> yolo : 检测盲道+物体
+        yolo --> processor : 返回检测结果
+        deactivate yolo
+        
+        processor -> fight : 15b. detect_fight(frame)
+        activate fight
+        fight -> fight : 检测冲突场景
+        fight --> processor : 返回fight结果
+        deactivate fight
+    end
+    
+    ' ==================== 条件判断逻辑 ====================
+    processor -> fusion : 16. fuse_results([yolo_res, fight_res])
+    activate fusion
+    
+    alt Fight检测到冲突
+        fusion -> decision : 17a. 触发紧急预警
+        activate decision
+        decision -> decision : 最高优先级处理
+        decision -> qwen : 18a. "生成警告指令"
+        activate qwen
+        qwen --> decision : "危险！前方有冲突，请立即停止"
+        deactivate qwen
+        decision -> tts : 19a. 播放紧急语音
+        activate tts
+        tts --> user : 🔊 警告音频
+        deactivate tts
+        deactivate decision
+    end
+    
+    alt YOLO检测到盲道
+        fusion -> fusion : 17b. 盲道模式激活
+        fusion -> fusion : 18b. 标记所有物体为obstacle
+        note right
+            person → obstacle
+            vehicle → obstacle
+            sidewalk → obstacle
+        end note
+        
+        fusion -> decision : 19b. 传递简化结果
+        activate decision
+        decision -> qwen : 20b. "生成盲道导航"
+        activate qwen
+        qwen --> decision : "前方3米盲道，左侧有障碍"
+        deactivate qwen
+        decision -> tts : 21b. 播放导航语音
+        activate tts
+        tts --> user : 🔊 导航音频
+        deactivate tts
+        deactivate decision
+        
+    else 未检测到盲道
+        fusion -> scene : 17c. 启用场景分类
+        activate scene
+        scene -> scene : 18c. 详细分类
+        scene --> fusion : 返回分类结果
+        deactivate scene
+        
+        fusion -> decision : 19c. 传递分类数据
+        activate decision
+        decision -> qwen : 20c. "生成场景描述"
+        activate qwen
+        qwen --> decision : "前方是人行道，左侧有行人"
+        deactivate qwen
+        decision -> tts : 21c. 播放场景语音
+        activate tts
+        tts --> user : 🔊 场景音频
+        deactivate tts
+        deactivate decision
+    end
+    
+    ' ==================== 结果输出 ====================
+    fusion -> fusion : 22. 合并所有检测框
+    fusion -> result_q : 23. put(fused_result)
+    deactivate fusion
+    
+    processor -> result_q : 24. get() 获取结果
+    processor -> processor : 25. 在帧上绘制标注
+    processor -> db : 26. 保存检测记录
+    
+    processor -> web : 27. 推送视频流
+    web -> user : 28. 显示实时画面
+end
+
+' ==================== 结束阶段 ====================
+user -> web : 29. 停止播放
+web -> video_bp : 30. 停止处理请求
+video_bp -> processor : 31. stop_processing()
+processor -> processor : 32. 清理资源
+deactivate processor
+deactivate video_bp
+
+user <- web : 33. 显示"处理完成"
+
+' 图例说明
+note over yolo, fight
+    **三模型并行策略**
+    - 模型1和模型3始终并行运行
+    - 模型2仅在未检测到盲道时启用
+    - Fight检测优先级最高，立即中断
+end note
+
+note over fusion, decision
+    **融合决策逻辑**
+    1. 检查fight → 紧急预警
+    2. 检查盲道 → 简化处理
+    3. 无盲道 → 详细场景识别
+end note
+
+@enduml

@@ -1,0 +1,164 @@
+@startuml 主控制逻辑流程图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 主控制逻辑与三模型判断
+
+start
+
+:接收视频帧;
+
+' ==================== 并行处理开始 ====================
+fork
+    ' ==================== 分支1: 盲道检测与环境感知 ====================
+    partition "模型1: 盲道检测" #LightBlue {
+        :YOLO盲道检测模型;
+        :检测盲道 + 其他物体;
+    }
+    
+    if (检测到盲道?) then (✅ 是)
+        partition "盲道模式" #LightGreen {
+            :简化处理逻辑;
+            :将所有其他物体标记为\n**obstacle**;
+            note right
+                person → obstacle
+                vehicle → obstacle
+                sidewalk → obstacle
+                
+                **目的:**
+                盲人在盲道上
+                只需知道有无障碍
+                无需详细分类
+            end note
+            
+            :生成避障指令;
+            :"前方盲道，左侧有障碍物";
+        }
+    else (❌ 否)
+        partition "模型2: 环境感知" #LightYellow {
+            :场景分类模型启动;
+            :详细识别环境物体;
+            
+            :分类结果:\n• Automobile (汽车)\n• Obstacle (障碍物)\n• Person (行人)\n• Road (道路)\n• Sidewalk (人行道);
+            
+            note right
+                **5类详细分类**
+                提供精确的环境信息
+                帮助盲人理解周围环境
+            end note
+            
+            :生成场景描述;
+            :"前方是人行道，左侧3米有行人";
+        }
+    endif
+    
+    :融合检测结果;
+
+fork again
+    ' ==================== 分支2: 暴力检测 (独立并行) ====================
+    partition "模型3: 暴力检测 (独立模块)" #LightCoral {
+        note
+            ⚠️ **独立检测**
+            无论是否检测到盲道
+            在任何环境下都持续检测
+        end note
+        
+        :Fight冲突检测模型;
+        :检测打架/暴力行为;
+        
+        if (检测到fight?) then (🚨 是)
+            #Pink:触发紧急预警;
+            
+            :分析fight位置和距离;
+            
+            if (位置判断?) then (前方)
+                :预警指令 =\n"危险！前方有冲突\n请立即停下";
+            elseif (左侧)
+                :预警指令 =\n"危险！左侧有冲突\n请向右避让";
+            else (右侧)
+                :预警指令 =\n"危险！右侧有冲突\n请向左避让";
+            endif
+            
+            :最高优先级播报;
+            :重复播放3次 🔊🔊🔊;
+            
+            note right
+                🔴 **最高优先级**
+                立即中断其他语音
+                保护盲人安全
+            end note
+            
+        else (否)
+            :继续监测;
+        endif
+    }
+end fork
+
+' ==================== 结果合并与输出 ====================
+:合并所有模型检测结果;
+
+partition "Qwen语音生成" #Lavender {
+    :将检测结果传入Qwen;
+    :生成自然语言导航指令;
+    
+    if (是否有紧急预警?) then (有)
+        :优先播放fight预警;
+        :中断其他指令;
+    else (无)
+        :播放常规导航指令;
+    endif
+    
+    :pyttsx3语音合成;
+    :输出音频 🔊;
+}
+
+:在视频帧上绘制检测框;
+:推送到浏览器显示;
+
+' ==================== 图例说明 ====================
+legend right
+    |= 颜色 |= 模块 |= 说明 |
+    | <#LightBlue> | 模型1 | YOLO盲道检测 |
+    | <#LightGreen> | 盲道模式 | 简化为obstacle |
+    | <#LightYellow> | 模型2 | 环境感知5类 |
+    | <#LightCoral> | 模型3 | 暴力检测(独立) |
+    | <#Pink> | 预警 | 最高优先级 |
+    | <#Lavender> | Qwen | 语音生成 |
+    
+    **关键逻辑:**
+    1. 模型1和模型3并行执行
+    2. 盲道检测决定是否启用模型2
+    3. Fight预警优先级最高
+    4. 环境感知5类: Automobile/Obstacle/Person/Road/Sidewalk
+    
+    ----
+    
+    🎯 **三模型协作机制**
+    
+    **执行顺序:**
+    1️⃣ 模型1 (盲道) + 模型3 (Fight) → 并行执行
+    2️⃣ 根据模型1结果 → 决定是否启用模型2
+    3️⃣ 模型2 (环境感知) → 条件执行
+    4️⃣ 结果融合 → Qwen生成语音
+    
+    **决策树:**
+    • 检测到盲道 → 其他物体 = obstacle
+    • 未检测到盲道 → 启用模型2详细分类
+    • 检测到fight → 无条件预警(最高优先级)
+    
+    **环境感知5类:**
+    1. Automobile (汽车)
+    2. Obstacle (障碍物)
+    3. Person (行人)
+    4. Road (道路)
+    5. Sidewalk (人行道)
+    
+    ⏱️ **性能指标:**
+    • 模型1: ~20ms
+    • 模型3: ~15ms (并行)
+    • 模型2: ~200ms (条件执行)
+endlegend
+
+stop
+
+@enduml

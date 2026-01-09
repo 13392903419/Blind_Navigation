@@ -1,0 +1,196 @@
+@startuml 异步架构时序图-多帧处理
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 异步处理架构详解 (多帧关键帧展示)
+
+' 参与者定义
+actor "Browser\n浏览器" as browser
+participant "Reader\nThread\n读帧线程" as reader
+participant "Frame\nQueue\n帧队列" as frame_q
+participant "Inference\nThread\n推理线程" as inference
+participant "Result\nQueue\n结果队列" as result_q
+participant "Display\nThread\ndisplay_thread" as display
+participant "generate\nframes()\n帧生成器" as gen_frames
+
+' ==================== 初始化阶段 ====================
+note over reader, gen_frames
+    🔧 **初始化**：启动3个线程，创建队列
+end note
+
+reader -> frame_q: 创建帧队列\n(maxsize=30)
+inference -> result_q: 创建结果队列\n(maxsize=30)
+
+' ==================== 第1帧处理 (关键) ====================
+note over reader, gen_frames
+    📹 **Frame 1** 处理过程
+    (用来展示快速出现→部分补全的过程)
+end note
+
+reader -> reader: 1a. 读取Frame 1\n(第一帧)
+reader -> frame_q: 1b. put(Frame 1)
+note right
+    帧队列深度: 1/30
+end note
+
+' ==================== Frame 1: 推理并行处理 ====================
+par Model1/3并行执行 (快速) ⚡
+    inference -> inference: 2a. get(Frame 1) from queue\n耗时: ~5ms
+    
+    par
+        inference -> inference: 3a. Model1盲道检测\n耗时: ~20ms
+    par
+        inference -> inference: 3b. Model3暴力检测\n耗时: ~15ms
+    end
+    
+    note right of inference
+        **并行完成**
+        总耗时: ~20ms
+        ✅ 快速结果可用
+    end note
+    
+    inference -> inference: 4. 绘制Model1/3标注\n(红框/绿框)
+    inference -> result_q: 5a. put(Frame1_partial_result)\n包含: {model1, model3, boxes}
+    note right
+        结果队列深度: 1/30
+        ⏱️ 总耗时: ~50ms
+        🟢 **结果已就绪！**
+    end note
+
+par Model2推理执行 (慢速) 🐢
+    inference -> inference: 6. Model2场景分类\n耗时: ~200ms\n(等待中...)\n环境感知很复杂
+    note right
+        ⏳ **阻塞**
+        Browser此时收到Frame1_partial_result
+        开始渲染！
+    end note
+end
+
+' ==================== 中间: Browser开始渲染Frame 1 ====================
+result_q -> gen_frames: 5b. 有新结果！\n(Frame1_partial)
+gen_frames -> gen_frames: 7. 绘制画布\n(仅有Model1/3框)
+
+alt **Frame1_partial渲染中**
+    gen_frames -> display: 8a. yieldFrame1_partial\n(img tag src changed)
+    display -> browser: 8b. 实时传输\n(application/octet-stream)
+    
+    note right of browser
+        👀 **用户看到**：
+        - 🟥 Red bbox (盲道)
+        - 🟦 Blue bbox (暴力)
+        - ⏳ 等待环境感知...
+        - 外观: "先有框，黑屏等待"
+    end note
+    
+    browser -> browser: ⏳ 等待Model2结果\n (等待200ms...)
+end
+
+' ==================== Frame 1: Model 2完成，补帧 ====================
+inference -> inference: 9. Model2场景分类完成\n耗时: ~200ms\n返回: person/sidewalk/road
+note right of inference
+    📊 得到场景信息
+    - person @ left 2m
+    - sidewalk @ front 5m
+end note
+
+inference -> inference: 10. 绘制Model2标注\n(黄框 + 距离标签)
+inference -> result_q: 11a. put(Frame1_full_result)\n包含: {model1, model2, model3}\n完整检测框
+note right
+    结果队列深度: 2/30
+    ✅ **完整结果到达**
+end note
+
+' ==================== Browser补帧：Frame 1完整版 ====================
+result_q -> gen_frames: 11b. 新结果！\n(Frame1_full)
+gen_frames -> gen_frames: 12. 重新绘制\n(包含Model2信息)
+
+alt **Frame1_full补充渲染**
+    gen_frames -> display: 13a. yield Frame1_full\n(更新同一img tag)
+    display -> browser: 13b. 传输完整帧
+    
+    note right of browser
+        👀 **用户看到**: 
+        - 🟥 Red bbox (盲道)
+        - 🟦 Blue bbox (暴力)  
+        - 🟨 Yellow bbox (环境)
+        - 📍 距离标签: "人行道前5m"
+        ✅ **完整画面补全**
+        外观: "黑屏后突然出现环境信息"
+    end note
+end
+
+' ==================== 第2帧快速处理 ====================
+note over reader, gen_frames
+    📹 **Frame 2** (快速处理)
+    Model1/3已完成，Model2仍在处理Frame1时...
+end note
+
+par **Frame 2处理开始** (Frame1_Model2还在跑)
+    reader -> reader: 14a. 读取Frame 2
+    reader -> frame_q: 14b. put(Frame 2)\n帧队列: 1/30
+    
+    inference -> inference: 15a. get(Frame 2)\n Model1/3并行处理
+    note right
+        🔄 **重叠处理**：
+        - Frame1的Model2在执行
+        - Frame2的Model1/3也在执行
+        - 充分利用CPU资源
+    end note
+    
+    inference -> result_q: 15b. put(Frame2_partial_result)\n(快速结果)
+    note right
+        🟢 Frame2快速结果出现
+        Browser可以渲染Frame2_partial
+        (此时Frame1_Model2还未完成)
+    end note
+end
+
+' ==================== 浏览器看到的现象 ====================
+result_q -> gen_frames: 16. Frame2_partial来了！
+gen_frames -> display: 17. yield Frame2_partial
+display -> browser: 传输Frame 2部分结果
+note right of browser
+    👀 **用户看到**：
+    Frame 1: 🟥🟦 (等待黄框)
+    Frame 2: 🟥🟦 (刚刚来)
+    ---
+    🎬 **视觉效果**：
+    像"逐帧补充"的流畅效果！
+    而不是"全等待"的卡顿
+end note
+
+' ==================== Frame 1 Model2最终完成 ====================
+inference -> inference: 18. Frame1 Model2终于完成\n(总耗时 ~250ms)
+inference -> result_q: 19a. put(Frame1_full_result)
+note right
+    虽然很晚，但终于来了
+end note
+
+result_q -> gen_frames: 19b. Frame1_full_result
+gen_frames -> display: 20. yield Frame1_full\n(补帧)
+display -> browser: 更新Frame 1为完整版
+note right of browser
+    👀 **补全**：Frame 1出现🟨
+end note
+
+' ==================== 持续处理 ====================
+par **持续管道处理**
+    reader -> frame_q: Frame 3, 4, 5...\n持续读取
+    inference -> inference: Model1/3快速检测\n→ 快速出现在Browser
+    inference -> inference: Model2推理\n→ 异步补帧
+    gen_frames -> browser: 持续传输\n每有新结果就更新
+end
+
+note bottom
+    🎯 **架构优势**：
+    1️⃣ 读帧、推理、显示三线程独立
+    2️⃣ Model1/3快速反馈，用户看到快速响应
+    3️⃣ Model2异步补帧，不阻塞整体流程
+    4️⃣ 结果队列缓冲，充分利用资源
+    5️⃣ Browser逐帧增量更新，平滑体验
+    
+    ⚠️ **视觉现象**：
+    初期: 黑屏 → 快速出现框 → 补充标签 → 流畅更新
+end note
+
+@enduml

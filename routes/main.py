@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, session, jsonify
 from utils.decorators import login_required
 from utils.voice_utils import get_available_voices, speak
 from models.database import update_user_settings_in_db, get_user_details, get_user_settings
-from config import DEFAULT_USER_SETTINGS
+from config import DEFAULT_USER_SETTINGS, BAIDU_MAP_CONFIG
 import threading
 import time
 
@@ -59,7 +59,9 @@ def index():
             print(f"[首页] 已从数据库加载用户设置: {user_settings_data}")
     
     settings = get_current_user_settings()
-    return render_template('index.html', settings=settings, current_user=user)
+    # 传递百度地图 AK 到前端模板，避免前端硬编码导致不一致
+    baidu_ak = BAIDU_MAP_CONFIG.get('api_key')
+    return render_template('index.html', settings=settings, current_user=user, baidu_ak=baidu_ak)
 
 
 @main_bp.route('/update_settings', methods=['POST'])

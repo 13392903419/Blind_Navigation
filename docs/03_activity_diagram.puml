@@ -1,0 +1,110 @@
+@startuml 三模型条件判断流程图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 三模型条件判断活动图
+
+start
+
+:用户上传/实时视频;
+:初始化YOLO模型;
+
+partition "视频帧循环处理" {
+    :从frame_queue获取视频帧;
+    
+    ' 并行处理开始
+    fork
+        :模型1: YOLO盲道检测;
+        note right
+            检测类别:
+            - blind_path
+            - person
+            - vehicle
+            - sidewalk
+        end note
+    fork again
+        :模型3: Fight冲突检测;
+        note right
+            检测打架/冲突场景
+            (待集成)
+        end note
+    end fork
+    
+    ' Fight预警独立判断
+    if (模型3检测到Fight?) then (是)
+        #Pink:发出紧急预警 ⚠️;
+        :播放警告音频\n"危险！请远离!";
+        note right
+            最高优先级
+            立即中断其他处理
+        end note
+    endif
+    
+    ' 盲道条件判断
+    if (模型1检测到盲道?) then (是)
+        #LightBlue:**盲道模式激活**;
+        :将所有其他物体标记为\n**obstacle**;
+        note right
+            简化处理逻辑:
+            - person → obstacle
+            - vehicle → obstacle
+            - sidewalk → obstacle
+        end note
+        
+        :计算障碍物相对位置;
+        :生成避障指令;
+        
+    else (否)
+        #LightGreen:**场景识别模式**;
+        :启用模型2场景分类;
+        note right
+            详细分类:
+            - person (行人)
+            - sidewalk (人行道)
+            - road (道路)
+            - vehicle (车辆)
+            - building (建筑)
+        end note
+        
+        :识别具体类别;
+        :分析场景语义;
+        :生成场景描述;
+    endif
+}
+
+' 结果融合
+:融合三个模型的检测结果;
+:构建结构化检测数据;
+
+partition "语音导航生成" {
+    :将检测结果传递给Qwen;
+    :Qwen根据prompt模板生成导航指令;
+    
+    if (是否包含紧急情况?) then (是)
+        :优先播放紧急指令;
+    else (否)
+        :播放常规导航指令;
+    endif
+    
+    :pyttsx3语音合成;
+    :输出音频到用户;
+}
+
+' 视频输出
+fork
+    :在视频帧上绘制检测框;
+    :添加标签文本;
+    :推送到result_queue;
+fork again
+    :记录检测日志到数据库;
+end fork
+
+if (视频结束?) then (是)
+    :清理资源;
+    stop
+else (否)
+    :继续处理下一帧;
+    backward :返回帧循环;
+endif
+
+@enduml

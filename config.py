@@ -9,7 +9,7 @@ SECRET_KEY = '13392903419'  # 请更改为随机字符串，用于session加密
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'ws159357',  # 填写您的MySQL密码
+    'password': 'Qiji199263',  # 填写您的MySQL密码
     'db': 'blind_navigation',
     'charset': 'utf8mb4',
 }
@@ -31,8 +31,27 @@ MAX_CONTENT_LENGTH = 300 * 1024 * 1024  # 限制上传大小为300MB
 MODEL_WEIGHTS = 'yolo/best.pt'  # 使用项目包含的预训练YOLOv8盲道检测模型
 
 # 百度地图MCP配置
+# 重要：使用百度地图前，必须在 https://lbsyun.baidu.com/apiconsole/key 中配置 Referer 白名单：
+# 
+# 白名单格式要求（重要！不要用 http:// 开头）：
+#   - 本地开发：*localhost* 或 *127.0.0.1*
+#   - 多个域名：*.mysite.com*,*myapp.com*（用英文逗号分隔）
+#   - 不限制（谨慎）：* （注意：容易泄露AK给其他网站，线上不建议）
+# 
+# 常见错误（不要这样做）：
+#   ❌ http://localhost:5000  （错误：包含协议和端口）
+#   ❌ localhost:5000          （错误：缺少通配符）
+#   ✓  *localhost*             （正确）
+#   ✓  *127.0.0.1*             （正确）
+#
+# 配置步骤：
+# 1. 访问：https://lbsyun.baidu.com/apiconsole/key
+# 2. 选择你的应用和 API Key，点击"编辑"
+# 3. 在"应用授权"→"Referer 白名单"中填入上述格式
+# 4. 勾选"Web服务"和"浏览器端"权限
+# 5. 保存后刷新页面测试
 BAIDU_MAP_CONFIG = {
-    'api_key': 'YYoc2er4kPA2qJOsqau4X9vQmbHsdz9x',  # 填写您的百度地图API密钥
+    'api_key': 'JdpmYDQsldEe0886JxFHqOqXFjuXtRd6',  # 填写您的百度地图API密钥
     'base_url': 'https://api.map.baidu.com',
     'web_service_url': 'https://api.map.baidu.com/geocoding/v3/',
     'direction_url': 'https://api.map.baidu.com/direction/v2/',

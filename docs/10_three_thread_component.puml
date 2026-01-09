@@ -1,0 +1,170 @@
+@startuml 三线程异步架构组件图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 三线程异步架构设计 (组件视图)
+
+' 定义样式
+skinparam component {
+    BackgroundColor #E1F5FE
+    BorderColor #01579B
+    FontColor #000000
+}
+
+skinparam storage {
+    BackgroundColor #C8E6C9
+    BorderColor #2E7D32
+}
+
+' ==================== 线程1: 读帧线程 ====================
+package "ReaderThread 读帧线程" #FFE082 {
+    component [VideoCapture\n视频句柄] as vc
+    component [Read Loop\n读取循环] as reader
+}
+
+' ==================== 队列1: 帧队列 ====================
+storage "FrameQueue\n帧队列\n容量:30" as frame_q
+
+note right of frame_q
+  maxsize: 30帧
+  格式: 640×480 RGB
+  内存: ~3-5MB/帧
+end note
+
+' ==================== 线程2: 推理线程 (核心) ====================
+package "InferenceThread 推理线程 (核心)" #FFCCBC {
+    
+    ' Phase1 快速推理
+    component [Model1\nYOLO盲道检测\n20ms] as model1 #FFF9C4
+    component [Model3\nFight冲突检测\n15ms] as model3 #FFF9C4
+    component [Phase1结果处理\n绘制红框+蓝框] as phase1_out #B3E5FC
+    
+    ' Phase2 缓慢推理
+    component [Model2\n场景分类\n200ms] as model2 #FFF59D
+    component [Phase2结果处理\n绘制黄框+标签] as phase2_out #B3E5FC
+    
+    ' 决策组件
+    component [DecisionEngine\n条件判断] as decision #C8E6C9
+    component [FightInterrupt\n紧急预警] as interrupt #FFCCCC
+}
+
+' ==================== 队列2: 结果队列 ====================
+storage "ResultQueue\n结果队列\n容量:30" as result_q
+
+note right of result_q
+  Partial结果:
+  {model1, model3}
+  
+  Full结果:
+  {model1, model2, model3}
+end note
+
+' ==================== 线程3: 显示线程 ====================
+package "DisplayThread 显示线程" #FFE082 {
+    component [generate_frames()\n帧生成器] as gen_frames
+    component [Draw Boxes\n绘制标注] as draw
+    component [JPEG Encode\n编码] as encode
+    component [Stream Output\n流媒体推送] as stream
+}
+
+' ==================== 外部组件 ====================
+actor "Browser\n浏览器" as browser
+
+' ==================== 数据流连接 ====================
+vc --> reader : 读取视频
+reader --> frame_q : put(Frame)
+
+frame_q --> model1 : get(Frame)
+frame_q --> model3 : get(Frame)
+
+model1 --> decision : blind_path_result
+model1 --> phase1_out : bbox数据
+model3 --> interrupt : fight_result
+model3 --> phase1_out : bbox数据
+
+phase1_out --> result_q : put(Frame_PARTIAL)\n立即推送 ✅
+note on link
+  T50ms
+  快速反馈
+end note
+
+model1 -down-> model2 : 触发场景分类\n(异步)
+model2 --> decision : scene_result
+model2 --> phase2_out : bbox数据
+
+phase2_out --> result_q : put(Frame_FULL)\n补帧 🟨
+note on link
+  T250ms
+  完整结果
+end note
+
+result_q --> gen_frames : get(Result)
+gen_frames --> draw : 结构化数据
+draw --> encode : 绘制完成
+encode --> stream : JPEG bytes
+stream --> browser : 实时视频流
+
+' ==================== 关键说明 ====================
+note bottom of model1
+  ⚡ Phase1 快速推理
+  Model1 + Model3 并行
+  总耗时: 20ms
+  立即推送到result_q
+  不等待Model2
+end note
+
+note bottom of model2
+  🐢 Phase2 缓慢推理
+  Model2 场景分类
+  耗时: 200ms
+  异步补帧
+  不阻塞Phase1
+end note
+
+note top of frame_q
+  🔄 异步队列1
+  Reader快速填满
+  Inference持续消费
+end note
+
+note top of result_q
+  🔄 异步队列2
+  Partial快速入队
+  Full异步补充
+  Browser持续消费
+end note
+
+note left of decision
+  🎯 条件判断
+  if blind_path:
+    标记obstacle
+  else:
+    详细分类
+end note
+
+note left of interrupt
+  🚨 最高优先级
+  检测到fight
+  立即预警
+  中断其他语音
+end note
+
+legend right
+  |= 颜色 |= 说明 |
+  | <#FFE082> | 线程组件 |
+  | <#FFCCBC> | 推理引擎 |
+  | <#FFF9C4> | 快速模型 |
+  | <#FFF59D> | 缓慢模型 |
+  | <#B3E5FC> | 结果处理 |
+  | <#C8E6C9> | 决策/队列 |
+  | <#FFCCCC> | 预警组件 |
+  
+  **关键时序:**
+  T0-T50: Phase1完成 → Partial
+  T0-T250: Phase2完成 → Full
+  
+  **视觉效果:**
+  先黑屏 → 快速框 → 补充标签
+endlegend
+
+@enduml

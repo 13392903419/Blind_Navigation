@@ -1,0 +1,216 @@
+@startuml 异步架构队列状态图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 异步队列状态演变图
+
+' ==================== 时间轴 ====================
+participant "Timeline" as time
+participant "FrameQueue\n帧队列" as fq
+participant "ReaderThread\n读帧" as reader
+participant "Model1/3\nFast" as fast
+participant "Model2\nSlow" as slow
+participant "ResultQueue\n结果队列" as rq
+participant "Browser\n浏览器" as browser
+
+' ==================== T0: 初始化 ====================
+rect rgb(200, 220, 255)
+note over time
+    **T0: 系统启动**
+    3个线程都在等待
+end note
+
+fq -> fq: Frame Queue\ninit(maxsize=30)\n深度: 0/30
+rq -> rq: Result Queue\ninit(maxsize=30)\n深度: 0/30
+
+end
+
+' ==================== T1-T5: Frame 1读取 ====================
+rect rgb(200, 255, 220)
+note over time
+    **T1-T5 (5ms)**
+    Reader读取Frame 1
+end note
+
+reader -> reader: 读取视频文件\nFrame 1
+reader -> fq: put(Frame1)
+
+fq -> fq: **Frame Queue**\n深度: 1/30 ✓\n[Frame1 | empty | ...]
+note right of fq
+    存储: numpy array
+    内存占用: ~3-5MB
+end note
+
+end
+
+' ==================== T6: Frame 1进入推理 ====================
+rect rgb(255, 240, 200)
+note over time
+    **T6 (推理开始)**
+    推理线程get(Frame1)
+end note
+
+fq -> fast: get(Frame1)
+note right of fast
+    🟢 Frame Queue深度: 0/30
+    Reader可继续读取新帧
+end note
+
+end
+
+' ==================== T7-T10: Model1/3并行执行 ====================
+rect rgb(255, 200, 200)
+note over time
+    **T7-T27 (20ms)**
+    Model1/3并行推理
+    (不阻塞Model2)
+end note
+
+par Model1执行
+    fast -> fast: Model1 YOLO\n盲道检测\n~20ms
+    note right
+        ✅ FAST
+        GPU利用率: 80%
+    end note
+par Model3执行
+    fast -> fast: Model3 Fight\n暴力检测\n~15ms
+    note right
+        ✅ FAST
+        并行计算
+    end note
+end
+
+' ==================== T8-12: Frame 2, 3, 4... 读取 ====================
+par **Reader继续读帧**
+    reader -> reader: T8-T12: 读取Frame 2,3,4
+    reader -> fq: T10: put(Frame2)\n深度: 1/30
+    reader -> fq: T13: put(Frame3)\n深度: 2/30
+    reader -> fq: T16: put(Frame4)\n深度: 3/30
+    
+    note right of reader
+        🔄 **重叠处理**：
+        Reader和推理线程
+        都在忙但互不阻塞
+    end note
+    
+    alt Frame队列快速填满
+        reader -> reader: T30: put(Frame10)\n深度: 8/30
+        reader -> reader: T50: put(Frame18)\n深度: 15/30
+        reader -> reader: T70: put(Frame26)\n深度: 25/30
+        reader -> reader: T80: put(Frame30)\n深度: 29/30
+        reader -> reader: T90: 队列满！阻塞
+    end note
+end
+
+' ==================== T27: Model1/3完成，结果入队 ====================
+rect rgb(200, 220, 255)
+note over time
+    **T27 (50ms)**
+    Model1/3完成 → 结果入队
+end note
+
+fast -> fast: 完成Model1/3\n绘制标注框\n(红框+蓝框)
+fast -> rq: put(Frame1_PARTIAL)
+note right of fast
+    包含:
+    - blind_path bbox
+    - fight bbox
+    - 置信度分数
+end note
+
+rq -> rq: **Result Queue**\n深度: 1/30 ✓\n[Frame1_P | empty | ...]
+
+rq -> browser: 📡 推送Frame1_PARTIAL\n实时流媒体
+
+browser -> browser: ✅ 收到Frame1_PARTIAL\n渲染: 🟥红框 + 🟦蓝框\n用户看到: 快速响应✓
+
+note right of browser
+    ⏱️ 响应延迟: 50ms\n非常快！
+    👀 用户感受: \n"立即看到检测框"
+end note
+
+end
+
+' ==================== T28-228: Model2执行（长期阻塞） ====================
+rect rgb(255, 220, 200)
+note over time
+    **T28-T228 (200ms)**
+    Model2场景分类执行
+    (MODEL1/3已完成，但Model2慢)
+end note
+
+par
+    slow -> slow: T28: Model2 Scene\n场景分类开始\n(person/sidewalk/road)\n耗时: 200ms
+    
+    par **此时Frame队列状态**
+        reader -> fq: T28-T90: 继续填满Frame队列\n深度: 25/30 (Reader阻塞)
+        
+        fast -> fast: T50-T150:\nget(Frame2,3,4...)\nModel1/3快速完成
+        fast -> rq: T50,T70,T90...:\nput(Frame2_P, Frame3_P...)\n结果队列: 15/30 (快速填满)
+    end
+    
+    par **此时Browser状态**
+        rq -> browser: T50-T150:\n连续推送Frame2_P, Frame3_P...\n(快速显示多帧的部分结果)
+        
+        browser -> browser: 👀 用户看到:\nFrame1: 🟥🟦⏳(等黄框)\nFrame2: 🟥🟦⏳(等黄框)\nFrame3: 🟥🟦⏳(等黄框)\n...\nFrame15: 🟥🟦⏳(等黄框)\n---\n*感觉像多帧齐头进行*\n*而非单帧卡顿*
+    end note
+    end note
+    end note
+end
+
+' ==================== T228: Model2完成 ====================
+rect rgb(200, 255, 200)
+note over time
+    **T228 (250ms总耗时)**
+    Model2终于完成
+end note
+
+slow -> slow: 完成Model2\n绘制黄框+距离标签
+slow -> rq: put(Frame1_FULL)
+note right of slow
+    包含:
+    - blind_path (红)
+    - scene objects (黄)
+    - fight (蓝)
+    - 完整信息
+end note
+
+rq -> rq: **Result Queue**\n深度: 18/30\n(Frame1-18的partial结果)
+rq -> rq: Frame1_FULL\n(补充full版本)
+
+rq -> browser: 📡 推送Frame1_FULL\n(更新Frame1)
+
+browser -> browser: ✅ 更新Frame1为FULL\n补充: 🟨黄框 + 距离\n用户看到: "补全了环境信息"
+
+note right of browser
+    ⏱️ 延迟: 250ms (较长)\n👀 用户感受:\n"先快速显示紧急信息\n再补充细节"\n**优先级高！**
+end note
+
+end
+
+' ==================== 队列深度历史图 ====================
+note bottom
+    📊 **队列深度变化时间轴**：
+    
+    **帧队列深度 (Frame Queue)**:
+    T0:  0/30 ████░░░░░░░░░░░░░░░░░░░░░░░░
+    T30: 5/30 █████░░░░░░░░░░░░░░░░░░░░░░░░
+    T60: 12/30 ████████████░░░░░░░░░░░░░░░░░░
+    T90: 29/30 ██████████████████████████████
+    
+    **结果队列深度 (Result Queue)**:
+    T0:  0/30 ████░░░░░░░░░░░░░░░░░░░░░░░░
+    T27: 1/30 █░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+    T50: 3/30 ███░░░░░░░░░░░░░░░░░░░░░░░░░░
+    T100: 15/30 ███████████████░░░░░░░░░░░░░░
+    T150: 12/30 ████████████░░░░░░░░░░░░░░░░░░ (Browser消费快)
+    T228: 18/30 ██████████████████░░░░░░░░░░░░
+    
+    🎯 **关键指标**：
+    • Model1/3响应: 20ms (极快)
+    • Model2响应: 200ms (较慢但异步)
+    • 总体延迟: 50ms看到快速反馈，250ms看到完整结果
+    • 队列效率: 充分缓冲，不阻塞
+end note
+
+@enduml

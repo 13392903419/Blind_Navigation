@@ -1,0 +1,232 @@
+@startuml 推理线程核心逻辑图
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 推理线程核心逻辑流程图
+
+start
+
+:初始化推理环境;
+:加载Model1 (YOLO);
+:加载Model3 (Fight);
+:加载Model2 (Scene);
+
+loop **持续处理帧**
+    
+    ' ==================== 获取帧 ====================
+    :获取Frame from frame_queue;
+    
+    if (队列为空?) then (是)
+        :等待新帧 (阻塞);
+    else (否)
+        :继续处理;
+    endif
+    
+    ' ==================== Phase 1: 快速Model1/3 ====================
+    rectangle #LightBlue
+        note
+            ⚡ **Phase 1: 快速推理** (20ms)
+            并行执行Model1/3
+        end note
+        
+        par **Model1执行 (并行)**
+            partition "Model1: 盲道检测" {
+                :YOLO Model Forward;
+                :盲道检测 & 物体识别;
+                :→ blind_path_result;
+                :→ other_objects;
+            }
+        par **Model3执行 (并行)**
+            partition "Model3: 暴力检测" {
+                :Fight Detection Forward;
+                :暴力冲突识别;
+                :→ fight_result;
+                :→ fight_confidence;
+            }
+        end
+        
+        ' 绘制快速结果
+        partition "绘制快速标注" {
+            if (blind_path_detected?) then (是)
+                :红框绘制 (blind_path);
+            endif
+            
+            if (fight_detected?) then (是)
+                :蓝框绘制 (fight area);
+            endif
+        }
+        
+        ' 立即推送快速结果
+        :✅ put(result_queue) ← Frame_PARTIAL\n包含: model1_bbox, model3_bbox\n跳过: model2数据;
+        note right
+            🟢 **关键时刻！**
+            结果立即可用
+            Browser可开始渲染
+            ⏱️ 耗时: ~50ms
+        end note
+    end rectangle
+    
+    ' ==================== Phase 2: 缓慢Model2 (异步继续) ====================
+    rectangle #LightYellow
+        note
+            🐢 **Phase 2: 缓慢推理** (200ms)
+            执行复杂的场景分类
+            不阻塞Frame_PARTIAL的传输
+        end note
+        
+        partition "Model2: 场景分类" {
+            :场景分类 Forward;
+            note right
+                🟡 复杂推理
+                - ResNet/ViT特征提取
+                - 多分类逻辑
+                - 目标距离计算
+                耗时: 200ms
+            end note
+            
+            :检测人/行人/道路/建筑;
+            :计算目标距离和方向;
+            :→ scene_result;
+            :→ object_list;
+        }
+        
+        partition "绘制场景标注" {
+            :黄框绘制 (scene objects);
+            :距离标签 ("人行道前5m");
+            :方向箭头 (left/right/front);
+        }
+        
+        ' 补帧：推送完整结果
+        :✅ put(result_queue) ← Frame_FULL\n包含: model1_bbox, model2_bbox, model3_bbox\n完整: 环境感知信息;
+        note right
+            🟡 **补帧时刻**
+            拥有完整检测信息
+            Browser更新显示
+            ⏱️ 耗时: ~250ms (总)
+        end note
+    end rectangle
+    
+    ' ==================== 条件判断：盲道模式 ====================
+    rectangle #LightGreen
+        note
+            🎯 **条件判断逻辑**
+        end note
+        
+        if (blind_path_detected?) then (是 ✓)
+            partition "盲道模式激活" {
+                note
+                    检测到盲道 → 简化处理
+                end note
+                
+                :遍历result中所有物体;
+                :if 类别 != 'blind_path';
+                    :标记为 'obstacle';
+                :endif;
+                note right
+                    person → obstacle
+                    vehicle → obstacle
+                    sidewalk → obstacle
+                end note
+                
+                :计算obstacle相对盲道位置;
+                :确定避障方向 (left/right);
+                
+                :调用Qwen生成避障指令;
+                :"前方盲道，左侧2米有障碍物，请右移";
+            }
+        else (否 ✗)
+            partition "场景分类模式激活" {
+                note
+                    未检测盲道 → 详细分类
+                end note
+                
+                :使用model2结果;
+                :详细描述环境;
+                
+                :调用Qwen生成场景描述;
+                :"前方是人行道，左侧有行人";
+            }
+        endif
+    end rectangle
+    
+    ' ==================== 独立：Fight预警 ====================
+    rectangle #LightCoral
+        note
+            🚨 **Fight预警逻辑** (独立分支)
+        end note
+        
+        if (fight_detected?) then (是 🚨)
+            partition "紧急预警激活" {
+                :fight_confidence > 阈值?;
+                
+                if (是) then (确认危险)
+                    :触发最高优先级;
+                    :中断其他语音;
+                    
+                    :分析fight位置;
+                    if (在前方?) then
+                        :指令 = "前方有危险，立即停止";
+                    else if (在左侧?)
+                        :指令 = "左侧有危险，向右避让";
+                    else
+                        :指令 = "右侧有危险，向左避让";
+                    endif
+                    
+                    :调用Qwen生成预警;
+                    :重复播放 3次 (强制注意);
+                    note right
+                        🔴 **最高优先级**
+                        覆盖所有其他语音
+                    end note
+                else (误警)
+                    :忽略;
+                endif
+            }
+        else (否)
+            note
+                正常处理
+            end note
+        endif
+    end rectangle
+    
+end loop
+
+stop
+
+' ==================== 关键指标标注 ====================
+note top
+    ⏱️ **性能指标**：
+    • Model1: 20ms (YOLO快速)
+    • Model3: 15ms (Fight简单)
+    • Model1/3并行: max(20, 15) = 20ms
+    • 绘制框: 10ms
+    • Phase1总耗时: 50ms ✅
+    
+    • Model2: 200ms (Scene复杂)
+    • 绘制标注: 15ms
+    • Phase2总耗时: 250ms 🐢
+    
+    📊 **吞吐量**：
+    • 30fps视频: 33ms/帧
+    • Model1/3: 可跟上 (50ms < 33ms×多帧缓冲)
+    • Model2: 落后但异步补帧
+end note
+
+note bottom
+    🎯 **异步架构妙处**：
+    
+    1️⃣ **不阻塞**：Model2慢不影响Frame_PARTIAL推送
+    2️⃣ **渐进加载**：先快后慢，逐帧补充
+    3️⃣ **优先级清晰**：Fight最高，Model1次高，Model2最低
+    4️⃣ **用户体验**：感觉"响应快"而非"等待慢"
+    5️⃣ **资源利用**：GPU充分使用，CPU不闲置
+    
+    💡 **为什么看起来"先黑屏后补帧"**：
+    • T0-T50ms: Browser白屏 (等待第一个结果)
+    • T50ms: 显示Frame1_PARTIAL (快速框)
+    • T50-250ms: Frame1等待Model2 (显示不完整)
+    • T250ms: Frame1补全 (补充黄框)
+    → 视觉效果像"逐帧补充"而非"单帧卡顿"
+end note
+
+@enduml

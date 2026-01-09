@@ -34,22 +34,42 @@
         (function() {
             var script = document.createElement('script');
             script.type = 'text/javascript';
-            script.src = 'https://api.map.baidu.com/api?v=3.0&ak=33dsM4NdLHNtrJ9SgC5CbZpL2B4nPnA7&callback=baiduMapInit';
+            // 使用后端传入的 AK，避免前端硬编码导致失效
+            var ak = '{{ baidu_ak | default("") }}';
+            console.log('[地图加载] 后端传入的AK:', ak ? ak.substring(0, 10) + '***' : '(空)');
+            
+            // 如果后端未传入AK，尝试使用备用AK
+            if (!ak || ak.trim() === '') {
+                console.warn('[地图加载] 未从后端获取AK，使用备用AK');
+                ak = 'kAOe1GJYmW5XZzNuwB8NfxiW71LItGUD';
+            }
+            
+            script.src = 'https://api.map.baidu.com/api?v=3.0&ak=' + encodeURIComponent(ak) + '&callback=baiduMapInit';
+            console.log('[地图加载] 加载地图API...');
             script.async = true;
             script.onerror = function() {
-                console.error('百度地图API加载失败');
+                console.error('[地图加载] 百度地图API脚本加载失败，可能原因：AK无效、域名未授权、网络问题');
+                window.baiduMapReady = false;
+            };
+            script.onload = function() {
+                console.log('[地图加载] 脚本加载完成，等待SDK初始化...');
             };
             document.head.appendChild(script);
         })();
         
         function baiduMapInit() {
+            console.log('[地图加载] baiduMapInit 回调触发');
+            if (typeof BMap === 'undefined') {
+                console.error('[地图加载] BMap对象未定义，SDK加载可能不完整');
+                return;
+            }
             window.baiduMapReady = true;
-            console.log('百度地图API加载完成');
+            console.log('[地图加载] 百度地图API初始化完成，开始执行回调');
             window.baiduMapCallbacks.forEach(function(callback) {
                 try {
                     callback();
                 } catch(e) {
-                    console.error('地图回调执行失败:', e);
+                    console.error('[地图加载] 地图回调执行失败:', e);
                 }
             });
             window.baiduMapCallbacks = [];
@@ -3871,12 +3891,48 @@
             }
         }
 
-        // 初始化地图
+        // 初始化地图（带容错机制）
         function initMap() {
-            console.log("初始化地图...");
+            console.log("[地图初始化] 开始初始化地图...");
             try {
-                // 创建地图实例
-                map = new BMap.Map("map");
+                // 基本健壮性检查：确保SDK与容器存在
+                if (typeof BMap === 'undefined') {
+                    throw new Error('Baidu Map SDK未加载，请检查AK是否正确以及网络与域名白名单设置。可能原因：(1) AK无效或未授权当前域名 (2) 域名未在百度地图控制台白名单中 (3) 网络无法访问api.map.baidu.com');
+                }
+                var container = document.getElementById('map');
+                if (!container) {
+                    throw new Error('地图容器未找到，请确认页面中存在id为"map"的元素');
+                }
+                
+                // 检查容器是否有高度（否则地图无法显示）
+                if (container.offsetHeight === 0 || container.offsetWidth === 0) {
+                    console.warn('[地图初始化] 地图容器宽高为0，地图可能无法显示');
+                }
+                
+                console.log('[地图初始化] 检查SDK初始化状态...');
+                
+                // 检查SDK内部是否已初始化，避免 coordType undefined 错误
+                if (!window.BMap || !window.BMap.Map) {
+                    throw new Error('BMap.Map 不可用，这通常表示 AK 未在百度地图控制台中授权当前域名。请访问 https://lbsyun.baidu.com/apiconsole/key 添加白名单。');
+                }
+                
+                console.log('[地图初始化] 创建地图实例...');
+                // 创建地图实例 - 这一步可能因为AK无效导致SDK内部错误
+                try {
+                    map = new BMap.Map("map");
+                } catch (mapError) {
+                    // 捕获 coordType 等内部错误
+                    console.error('[地图初始化] BMap.Map 构造函数异常:', mapError);
+                    console.error('[地图初始化] 错误信息:', mapError.toString());
+                    
+                    // 提供诊断建议
+                    if (mapError.toString().includes('coordType')) {
+                        throw new Error('百度地图 SDK 内部配置异常（coordType 为 null）。这表示 AK 未在百度地图控制台中为当前域名授权。\n\n解决方案：\n1. 访问 https://lbsyun.baidu.com/apiconsole/key\n2. 找到你的应用和 API Key\n3. 点击"编辑"，在"应用授权"中添加当前域名的白名单，例如 http://localhost:5000\n4. 刷新页面重试');
+                    } else {
+                        throw mapError;
+                    }
+                }
+                console.log('[地图初始化] 地图实例创建成功');
 
                 // 创建点坐标
                 let point = new BMap.Point(116.404, 39.915); // 默认北京坐标
@@ -3891,18 +3947,40 @@
                 var scaleControl = new BMap.ScaleControl();
                 map.addControl(scaleControl);
 
-                console.log("地图初始化完成");
+                console.log("[地图初始化] 地图初始化完成");
 
                 // 可以选择在地图加载后自动尝试定位
                 // 地图加载完成后尝试定位
                 map.addEventListener("tilesloaded", function() {
-                    console.log("地图图块加载完成，准备自动定位");
+                    console.log("[地图初始化] 地图图块加载完成，准备自动定位");
                     // 这里不再自动定位，让用户手动点击定位按钮
                     // locateMe();
                 });
             } catch (e) {
-                console.error("地图初始化失败:", e);
-                alert("地图初始化失败: " + e.message);
+                console.error("[地图初始化] 地图初始化失败:", e);
+                console.error("[地图初始化] 错误堆栈:", e.stack);
+                
+                // 构建用户友好的错误提示
+                var userMessage = "地图初始化失败\n\n";
+                if (e.toString && e.toString().includes('coordType')) {
+                    userMessage += "原因：AK 未在百度地图控制台中授权当前域名\n\n";
+                    userMessage += "解决方案：\n";
+                    userMessage += "1. 访问：https://lbsyun.baidu.com/apiconsole/key\n";
+                    userMessage += "2. 编辑应用，添加白名单\n";
+                    userMessage += "3. 刷新页面重试";
+                } else {
+                    userMessage += "错误: " + e.message;
+                }
+                
+                alert(userMessage);
+                
+                // 在页面上显示错误信息供调试
+                var errorDiv = document.getElementById('map');
+                if (errorDiv) {
+                    errorDiv.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;white-space:pre-wrap;word-break:break-all;">' + 
+                        '地图加载失败\n\n' + e.message + 
+                        '</div>';
+                }
             }
         }
 

@@ -1,0 +1,101 @@
+@startuml 数据流图(DFD)
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title 盲人导航系统 - 数据流图 (DFD Level 1)
+
+' 外部实体
+actor "盲人用户" as user #LightBlue
+actor "摄像头/视频" as camera #LightGreen
+cloud "百度地图API" as map_api #LightYellow
+
+' 数据处理过程 (圆形)
+circle P1 as "P1\n视频采集\n与预处理"
+circle P2 as "P2\n多模型\n检测与融合"
+circle P3 as "P3\n智能决策\n与规则引擎"
+circle P4 as "P4\n语音生成\n与导航"
+circle P5 as "P5\n用户认证\n与管理"
+
+' 数据存储 (平行线)
+storage D1 as "D1: 用户数据库"
+storage D2 as "D2: 检测历史"
+storage D3 as "D3: 配置文件"
+
+' ==================== 数据流 ====================
+
+' 输入流
+camera --> P1 : 视频流\n(30fps)
+user --> P1 : 上传视频文件\n(.mp4/.avi)
+user --> P5 : 登录请求\n(用户名/密码)
+
+' 视频处理流
+P1 --> P2 : 视频帧\n(640x480 RGB)
+note on link
+    frame_queue
+    异步队列
+end note
+
+' 模型检测流
+P2 --> P2 : 内部循环:\n1.盲道检测\n2.场景分类\n3.冲突检测
+P2 --> P3 : 检测结果\n(JSON格式)
+note on link
+    {
+      "blind_path": true,
+      "obstacles": [...],
+      "fight_detected": false
+    }
+end note
+
+' 决策流
+P3 --> P3 : 条件判断:\nif/else逻辑
+P3 --> P4 : 导航指令\n(结构化文本)
+note on link
+    "前方3米盲道，
+    左侧有障碍物"
+end note
+
+' 语音生成流
+P4 --> P4 : Qwen模型处理
+P4 --> user : 语音播放\n(pyttsx3)
+P4 --> user : 实时视频流\n(带标注框)
+
+' 地图服务流
+P3 --> map_api : 位置查询\n(经纬度)
+map_api --> P3 : 路径规划\n(导航路线)
+P3 --> P4 : 路径信息
+
+' 数据存储流
+P5 --> D1 : 写入用户信息
+D1 --> P5 : 验证用户身份
+
+P2 --> D2 : 记录检测日志\n(时间戳+结果)
+D2 --> P4 : 读取历史趋势
+
+P1 --> D3 : 读取模型路径
+P2 --> D3 : 读取阈值参数
+P4 --> D3 : 读取语音设置
+D3 --> P3 : 读取决策规则
+
+' 反馈流
+user --> P4 : 配置偏好\n(语音速度/音量)
+
+' 数据流说明
+note bottom of P2
+    **三模型并行处理：**
+    1. YOLO盲道检测 (已实现)
+    2. 场景分类模型 (待集成)
+    3. Fight冲突检测 (待集成)
+    
+    融合策略: 结果合并 + 优先级排序
+end note
+
+note bottom of P3
+    **决策规则表：**
+    | 盲道 | Fight | 动作 |
+    |-----|-------|-----|
+    | ✓   | -     | 盲道导航 |
+    | ✗   | -     | 场景识别 |
+    | -   | ✓     | 紧急预警 |
+end note
+
+@enduml
