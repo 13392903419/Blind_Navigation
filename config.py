@@ -9,15 +9,15 @@ SECRET_KEY = '13392903419'  # 请更改为随机字符串，用于session加密
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Qiji199263',  # 填写您的MySQL密码
+    'password': '@ACC13953201086',  # 填写您的MySQL密码
     'db': 'blind_navigation',
     'charset': 'utf8mb4',
 }
 
 # 邮件发送配置
 EMAIL_CONFIG = {
-    'sender': '1477224133@qq.com',  # 填写您的QQ邮箱
-    'password': 'vkkmneascifwicie',  # 填写QQ邮箱授权码（不是QQ密码）
+    'sender': '2030399660@qq.com',  # 填写您的QQ邮箱
+    'password': 'umqbwgwjfheddfja',  # 填写QQ邮箱授权码（不是QQ密码）
     'smtp_server': 'smtp.qq.com',
     'smtp_port': 465
 }

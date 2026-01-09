@@ -375,10 +375,23 @@ def push_inference(in_q, model, tag, color):
             pass
 
 # =============== Combiner 线程 ===============
+# 全局变量：跟踪各检测类型上次提示的时间（避免重复提示）
+last_fight_speak_time = 0
+last_obstacle_speak_time = 0
+last_blind_road_speak_time = 0
+
 def combiner_worker():
     """
     收集三模型结果，同帧绘制后写入 result_queue
+    并根据检测结果输出相应的语音提示
     """
+    global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
+
+    # 各类型的提示间隔（秒）
+    FIGHT_SPEAK_INTERVAL = 2.0
+    OBSTACLE_SPEAK_INTERVAL = 2.0
+    BLIND_ROAD_SPEAK_INTERVAL = 2.0
+
     while thread_control['running']:
         try:
             res = combined_queue.get(timeout=1.0)
@@ -396,26 +409,57 @@ def combiner_worker():
         # 三模型结果到齐
         if all(k in buf for k in ('blind_road', 'environment', 'violence')):
             frame = buf['frame']
+            current_time = time.time()
 
             # 盲道绘制
             b_res = buf['blind_road']
             blind_detected = False
+            blind_confidences = []
             if b_res['boxes'] is not None and len(b_res['boxes']) > 0:
                 for box in b_res['boxes']:
                     x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
                     conf = float(box.conf[0])
+                    blind_confidences.append(conf)
                     cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
                     cv2.putText(frame,f"blind:{conf:.2f}",(x1,y1-5),
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
                 blind_detected = True
 
+            # 检测到盲道且置信度高于0.6时，触发语音提示
+            if blind_detected and blind_confidences and max(blind_confidences) > 0.6:
+                if current_time - last_blind_road_speak_time >= BLIND_ROAD_SPEAK_INTERVAL:
+                    try:
+                        user_settings = get_user_settings_for_video()
+                        speech_content = "请沿盲道行走"
+                        current_speech_text = speech_content
+                        speak(speech_content, user_settings)
+                        print("[语音提示] 盲道检测 - 请沿盲道行走")
+                        last_blind_road_speak_time = current_time
+                    except Exception as e:
+                        print(f"[语音提示] 盲道语音播放错误: {e}")
+
             # 环境感知绘制
             e_res = buf['environment']
+            obstacle_detected = False
+            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度)
             if e_res['boxes'] is not None:
                 for box in e_res['boxes']:
                     x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
                     conf = float(box.conf[0])
                     cls = int(box.cls[0])
+
+                    # 计算障碍物在图像中的位置（左、中、右）
+                    img_width = frame.shape[1]
+                    box_center_x = (x1 + x2) / 2
+                    if box_center_x < img_width / 3:
+                        position = "左侧"
+                    elif box_center_x > 2 * img_width / 3:
+                        position = "右侧"
+                    else:
+                        position = "前方"
+
+                    obstacle_positions.append((position, conf))
+
                     if blind_detected:
                         label = "obstacle"
                         color = (0,0,255)
@@ -426,8 +470,29 @@ def combiner_worker():
                     cv2.putText(frame,f"{label}:{conf:.2f}",(x1,y1-5),
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
 
+                    obstacle_detected = True
+
+            # 检测到障碍物且置信度高于0.7时，触发语音提示
+            if obstacle_detected and obstacle_positions:
+                # 找到置信度最高的障碍物
+                best_obstacle = max(obstacle_positions, key=lambda x: x[1])
+                if best_obstacle[1] > 0.7:
+                    if current_time - last_obstacle_speak_time >= OBSTACLE_SPEAK_INTERVAL:
+                        try:
+                            user_settings = get_user_settings_for_video()
+                            position = best_obstacle[0]
+                            speech_content = f"{position}有障碍，请注意避让"
+                            current_speech_text = speech_content
+                            speak(speech_content, user_settings)
+                            print(f"[语音提示] 障碍物检测 - {position}有障碍，请注意避让")
+                            last_obstacle_speak_time = current_time
+                        except Exception as e:
+                            print(f"[语音提示] 障碍物语音播放错误: {e}")
+
             # 暴力绘制
             v_res = buf['violence']
+            fight_detected = False
+            fight_confidence = 0
             if v_res['boxes'] is not None:
                 for box in v_res['boxes']:
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
@@ -445,12 +510,27 @@ def combiner_worker():
                     if is_fight:
                         color = (0, 255, 255)
                         label = f"FIGHT:{conf:.2f}"
+                        fight_detected = True
+                        fight_confidence = max(fight_confidence, conf)
                     else:
                         color = (0, 128, 255)
                         label = f"NOFIGHT:{conf:.2f}"
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                     cv2.putText(frame, label, (x1, y1 - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            # 检测到fight行为且置信度高于0.6时，触发语音提示
+            if fight_detected and fight_confidence > 0.6:
+                if current_time - last_fight_speak_time >= FIGHT_SPEAK_INTERVAL:
+                    try:
+                        user_settings = get_user_settings_for_video()
+                        speech_content = "注意小心"
+                        current_speech_text = speech_content
+                        speak(speech_content, user_settings)
+                        print(f"[语音提示] 暴力行为检测 - 注意小心 (置信度: {fight_confidence:.2f})")
+                        last_fight_speak_time = current_time
+                    except Exception as e:
+                        print(f"[语音提示] 暴力行为语音播放错误: {e}")
 
             # 送给显示线程
             try:
@@ -477,11 +557,11 @@ def safe_thread_wrapper(thread_func, thread_name):
         except Exception as e:
             print(f"[{thread_name}] 线程异常: {e}")
             traceback.print_exc()
-            
+
             # 记录错误并触发停止
             thread_control['error'] = f"{thread_name}: {str(e)}"
             thread_control['running'] = False
-            
+
             # 向结果队列投放错误标记（让显示线程能感知）
             try:
                 error_data = {
@@ -501,45 +581,45 @@ def start_async_processing(video_path):
     启动异步视频处理管道：读帧线程 + 推理线程
     """
     global reader_thread, inference_thread
-    
+
     print(f"[异步管道] 准备启动异步处理: {video_path}")
-    
+
     with thread_control['lock']:
         # 如果已有线程在运行，先停止
         if thread_control['running']:
             print("[异步管道] 检测到旧线程，先停止...")
             stop_async_processing()
-        
+
         # 清空队列
         clear_queue(frame_queue)
         clear_queue(result_queue)
-        
+
         # 打开视频文件
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             cap = cv2.VideoCapture(video_path, cv2.CAP_FFMPEG)
-        
+
         if not cap.isOpened():
             raise Exception(f"无法打开视频文件: {video_path}")
-        
+
         thread_control['video_cap'] = cap
         # 计算视频原始FPS用于节流播放速率
         src_fps = cap.get(cv2.CAP_PROP_FPS)
-        if not src_fps or src_fps < 1:  
-            src_fps = 25  # 默认25fps   
+        if not src_fps or src_fps < 1:
+            src_fps = 25  # 默认25fps
         thread_control['frame_delay'] = 1.0 / src_fps
         thread_control['running'] = True
         thread_control['error'] = None
         thread_control['reader_alive'] = False
         thread_control['inference_alive'] = False
-        
+
         # 创建并启动读帧线程
         reader_thread = threading.Thread(
             target=safe_thread_wrapper(frame_reader_worker, "读帧线程"),
             daemon=True,
             name="FrameReader"
         )
-        
+
         # 创建并启动三模型推理线程 (Patch B)
         reader_thread.start()
         global inference_thread
@@ -555,7 +635,7 @@ def start_async_processing(video_path):
             'VioWorker'), daemon=True, name='VioWorker').start()
         threading.Thread(target=safe_thread_wrapper(
             combiner_worker, "Combiner"), daemon=True, name="Combiner").start()
-        
+
         print("[异步管道] ✓ 异步处理管道已启动 (三线程)")
 
 
@@ -564,36 +644,36 @@ def stop_async_processing():
     优雅停止所有异步线程
     """
     global reader_thread, inference_thread
-    
+
     print("[异步管道] 正在停止异步处理...")
-    
+
     # 设置停止标志
     thread_control['running'] = False
-    
+
     # 等待线程退出（最多3秒）
     if reader_thread and reader_thread.is_alive():
         reader_thread.join(timeout=3)
         if reader_thread.is_alive():
             print("[异步管道] ⚠ 读帧线程未能在3秒内退出")
-    
+
     if inference_thread and inference_thread.is_alive():
         inference_thread.join(timeout=3)
         if inference_thread.is_alive():
             print("[异步管道] ⚠ 推理线程未能在3秒内退出")
-    
+
     # 释放视频资源
     if thread_control['video_cap']:
         thread_control['video_cap'].release()
         thread_control['video_cap'] = None
-    
+
     # 清理队列
     clear_queue(frame_queue)
     clear_queue(result_queue)
-    
+
     # 重置标志
     thread_control['reader_alive'] = False
     thread_control['inference_alive'] = False
-    
+
     print("[异步管道] ✓ 异步处理已停止")
 
 
@@ -607,25 +687,25 @@ def frame_reader_worker():
     cap = thread_control['video_cap']
     frame_count = 0
     reader_start_time = time.time()
-    
+
     thread_control['reader_alive'] = True
-    
+
     while thread_control['running'] and cap.isOpened():
         ret, frame = cap.read()
-        
+
         if not ret:
             print(f"[读帧线程] 视频读取完毕，共读取 {frame_count} 帧")
             break
-        
+
         frame_count += 1
-        
+
         # 构造帧数据包
         frame_data = {
             'frame': frame,
             'frame_id': frame_count,
             'timestamp': time.time()
         }
-        
+
         try:
             # 队列满时阻塞（背压机制：推理跟不上就等待）
             #frame_queue.put(frame_data, block=True, timeout=1.0)
@@ -642,14 +722,14 @@ def frame_reader_worker():
             if frame_count % 30 == 0:  # 每30帧统计一次
                 elapsed = time.time() - reader_start_time
                 performance_metrics['reader_fps'] = int(frame_count / elapsed)
-                
+
         except queue.Full:
             performance_metrics['frame_drop_count'] += 1
-            # —— 节流：按原 FPS 读取，避免倍速 —— 
+            # —— 节流：按原 FPS 读取，避免倍速 ——
             time.sleep(thread_control.get('frame_delay', 0.04))  # 默认0.04秒
             print(f"[读帧线程] ⚠ 队列已满，丢弃第 {frame_count} 帧")
             continue
-    
+
     thread_control['reader_alive'] = False
     print(f"[读帧线程] 退出，总计读取 {frame_count} 帧")
 
@@ -660,11 +740,11 @@ def inference_worker():
     职责：核心计算密集型任务，GPU推理
     """
     global last_call_time, current_speech_text, model_stats, frame_times
-    
+
     thread_control['inference_alive'] = True
     inference_count = 0
     inference_start_time = time.time()
-    
+
     while thread_control['running']:
         try:
             # 从队列获取帧数据（超时1秒，避免死锁）
@@ -675,24 +755,24 @@ def inference_worker():
                 print("[推理线程] 读帧线程已退出且队列为空，准备退出")
                 break
             continue
-        
+
         frame = frame_data['frame']
         frame_id = frame_data['frame_id']
         frame_timestamp = frame_data['timestamp']
-        
+
         # 记录推理开始时间
         inference_start = time.time()
-        
+
         # ========== 1. 帧缩放（降低计算量） ==========
         # 统一缩放到较低分辨率以提速
         resized_frame, scale = resize_frame(frame, 640)
-        
+
         # ========== 2. YOLO推理 ==========
         results = model(resized_frame, verbose=False)
-        
+
         centers = []  # 检测框中心点
         confidences = []  # 置信度
-        
+
         # ========== 3. 解析检测结果 ==========
         for result in results:
             boxes = result.boxes
@@ -701,41 +781,41 @@ def inference_worker():
                 x1, y1, x2, y2 = box.xyxy[0].cpu()
                 conf = box.conf[0].cpu()
                 cls = int(box.cls[0].cpu())
-                
+
                 # 坐标映射回原始尺寸
                 orig_x1, orig_y1 = float(x1) / scale, float(y1) / scale
                 orig_x2, orig_y2 = float(x2) / scale, float(y2) / scale
                 center_x = (orig_x1 + orig_x2) / 2
                 center_y = (orig_y1 + orig_y2) / 2
-                
+
                 centers.append((center_x, center_y))
                 confidences.append(float(conf))
-                
+
                 # 在原始帧上绘制检测框
                 class_names = model.names
                 label = f"{class_names[cls]}: {conf:.2f}"
-                cv2.rectangle(frame, (int(orig_x1), int(orig_y1)), 
+                cv2.rectangle(frame, (int(orig_x1), int(orig_y1)),
                             (int(orig_x2), int(orig_y2)), (0, 255, 0), 2)
                 cv2.putText(frame, label, (int(orig_x1), int(orig_y1) - 5),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        
+
         # ========== 4. 计算性能指标 ==========
         inference_end = time.time()
         frame_latency = (inference_end - inference_start) * 1000  # 毫秒
-        
+
         # 更新FPS统计
         frame_times.append(inference_end)
         if len(frame_times) > max_frame_history:
             frame_times.pop(0)
-        
+
         if len(frame_times) >= 2:
             time_span = frame_times[-1] - frame_times[0]
             current_fps = int(len(frame_times) / time_span) if time_span > 0 else 0
         else:
             current_fps = 0
-        
+
         avg_confidence = int(np.mean(confidences) * 100) if confidences else 0
-        
+
         # ---------- 追加三模型推理并单独统计 ----------
         def update_stats(tag, latency_ms, conf_list):
             s = stats_map[tag]
@@ -783,30 +863,30 @@ def inference_worker():
         model_stats['latency'] = int(frame_latency)
         model_stats['confidence'] = avg_confidence
         model_stats['last_update'] = time.time()
-        
+
         # ========== 5. 方向判断与语音提示 ==========
         current_time = time.time()
         if len(centers) >= 2 and current_time - last_call_time >= CALL_INTERVAL:
             ys = np.array([c[1] for c in centers])
             xs = np.array([c[0] for c in centers])
             slope, intercept = np.polyfit(ys, xs, 1)
-            
+
             print(f"[盲道检测] 斜率: {slope:.3f}")
-            
+
             user_settings = get_user_settings_for_video()
             direction_detected = None
-            
+
             if slope < -THRESHOLD_SLOPE:
                 direction_detected = 'left'
                 print("[盲道检测] 检测到左转")
             elif slope > THRESHOLD_SLOPE:
                 direction_detected = 'right'
                 print("[盲道检测] 检测到右转")
-            
+
             # 触发语音提示（在单独线程中处理，避免阻塞）
             if direction_detected:
                 question = left_turn_question if direction_detected == 'left' else right_turn_question
-                
+
                 # 启动语音生成线程（不阻塞推理）
                 voice_thread = threading.Thread(
                     target=generate_and_speak,
@@ -815,7 +895,7 @@ def inference_worker():
                 )
                 voice_thread.start()
                 last_call_time = current_time
-        
+
         # ========== 6. 构造结果数据包并投放 ==========
         result_data = {
             'frame': frame,
@@ -825,19 +905,19 @@ def inference_worker():
             'confidence': avg_confidence,
             'timestamp': time.time()
         }
-        
+
         try:
             result_queue.put(result_data, block=True, timeout=1.0)
             inference_count += 1
-            
+
             # 更新推理FPS
             if inference_count % 30 == 0:
                 elapsed = time.time() - inference_start_time
                 performance_metrics['inference_fps'] = int(inference_count / elapsed)
-                
+
         except queue.Full:
             print(f"[推理线程] ⚠ 结果队列已满，丢弃帧 {frame_id}")
-    
+
     thread_control['inference_alive'] = False
     print(f"[推理线程] 退出，总计推理 {inference_count} 帧")
 
@@ -847,33 +927,33 @@ def generate_and_speak(question, user_settings):
     语音生成辅助函数：AI生成 + 语音播报（在独立线程中运行）
     """
     global current_speech_text
-    
+
     answer_content = None
     ollama_success = False
-    
+
     try:
         response = ollama_client.chat(model="qwen2.5:3b", messages=[
             {"role": "system", "content": get_prompt_template(user_settings)},
             {"role": "user", "content": question}
         ], stream=True)
-        
+
         answer_content = ""
         for chunk in response:
             content = chunk.get('message', {}).get('content', '')
             if content:
                 answer_content += content
-        
+
         if answer_content.strip():
             ollama_success = True
-            
+
     except Exception as e:
         print(f"[Ollama] 调用失败: {e}")
-    
+
     # 降级为默认提示
     if not ollama_success or not answer_content:
         direction = "左" if "左" in question else "右"
         answer_content = f"请注意，盲道向{direction}转了，请往{direction}走。"
-    
+
     # 设置语音文本并播放
     current_speech_text = answer_content
     speak(answer_content, user_settings)
@@ -900,28 +980,28 @@ def generate_frames():
     职责：JPEG编码 + HTTP流式传输
     """
     global current_speech_text
-    
+
     # 如果异步处理未启动，显示等待提示
     if not thread_control['running']:
         current_speech_text = "提示：系统会实时分析盲道方向，当方向发生变化时会自动播报语音提示。"
         while not thread_control['running']:
             wait_frame = create_info_frame("请上传视频文件开始分析")
-            ret, buffer = cv2.imencode('.jpg', wait_frame, 
+            ret, buffer = cv2.imencode('.jpg', wait_frame,
                                       [cv2.IMWRITE_JPEG_QUALITY, 85])
             frame = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             time.sleep(1)
-    
+
     print("[显示线程] 开始从结果队列消费帧...")
-    
+
     # 从结果队列消费并传输
     try:
         while True:
             try:
                 # 从队列获取结果（超时0.5秒）
                 result_data = result_queue.get(timeout=0.5)
-                
+
                 # 检测到错误标记
                 if 'error' in result_data:
                     print(f"[显示线程] 检测到错误: {result_data.get('message', '未知错误')}")
@@ -930,34 +1010,34 @@ def generate_frames():
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
                     break
-                
+
                 # 正常帧数据
                 frame = result_data['frame']
-                
+
                 # 更新性能监控
                 performance_metrics['frame_queue_size'] = frame_queue.qsize()
                 performance_metrics['result_queue_size'] = result_queue.qsize()
-                
+
                 # JPEG编码（质量85，平衡大小与质量）
                 ret, buffer = cv2.imencode('.jpg', frame,
                                           [cv2.IMWRITE_JPEG_QUALITY, 85])
-                
+
                 if not ret:
                     print("[显示线程] JPEG编码失败")
                     continue
-                
+
                 # HTTP流式传输
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + 
+                       b'Content-Type: image/jpeg\r\n\r\n' +
                        buffer.tobytes() + b'\r\n')
-                
+
             except queue.Empty:
              # 若还有线程在运行则继续等待，否则退出
                 if thread_control['running']:
                     continue
                 else:
                     break
-                
+
     except Exception as e:
         print(f"[显示线程] 异常: {e}")
         traceback.print_exc()
@@ -965,7 +1045,7 @@ def generate_frames():
         ret, buffer = cv2.imencode('.jpg', error_frame)
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-    
+
     finally:
         print("[显示线程] 退出")
         # 显示结束画面
@@ -1051,10 +1131,10 @@ def generate_frames_legacy():
             centers = []  # 存储所有检测框的 (center_x, center_y)
             confidences = []  # 存储所有检测框的置信度
             annotated_frame = frame.copy()  # 用于绘制的帧
-            
+
             if main_blind_road_model_loaded:
                 blind_road_results = main_blind_road_model.predict(frame, verbose=False)
-                
+
                 # 检查盲道检测结果
                 if blind_road_results and len(blind_road_results) > 0:
                     result = blind_road_results[0]
@@ -1072,13 +1152,13 @@ def generate_frames_legacy():
                             centers.append((center_x, center_y))
                             conf = float(box.conf[0])
                             confidences.append(conf)
-            
+
             # 第二步：根据检测结果决策
             if blind_road_detected and main_blind_road_model_loaded:
                 # 如果检测到盲道，先绘制盲道检测结果
                 annotated_frame = blind_road_results[0].plot()
                 print("[主模型级联推理] 检测到盲道，使用盲道检测模型结果")
-                
+
                 # 同时运行环境感知模型
                 if main_environment_model_loaded:
                     try:
@@ -1086,7 +1166,7 @@ def generate_frames_legacy():
                         if environment_results and len(environment_results) > 0:
                             env_result = environment_results[0]
                             env_boxes = env_result.boxes
-                            
+
                             # 在已绘制的盲道帧上叠加绘制环境感知结果。
                             # 若已检测到盲道 -> 全部统一标记为 obstacle；
                             # 否则保持原 5 类标签名。
@@ -1122,7 +1202,7 @@ def generate_frames_legacy():
                         annotated_frame = frame.copy()
                 else:
                     annotated_frame = frame.copy()
-            
+
             # 第三步：同时运行暴力行为检测模型（无论是否检测到盲道都执行）
             if main_violence_model_loaded:
                 try:
@@ -1130,7 +1210,7 @@ def generate_frames_legacy():
                     if violence_results and len(violence_results) > 0:
                         violence_result = violence_results[0]
                         violence_boxes = violence_result.boxes
-                        
+
                         # 在已绘制的帧上叠加绘制暴力行为检测结果
                         if violence_boxes is not None and len(violence_boxes) > 0:
                             for box in violence_boxes:
@@ -1142,20 +1222,20 @@ def generate_frames_legacy():
                                         xyxy = xyxy.cpu().numpy()
                                     x1, y1, x2, y2 = xyxy.astype(int)
                                     conf = float(box.conf[0])
-                                    
+
                                     # 使用黄色绘制暴力行为
                                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 255), 3)
                                     label = f"FIGHT: {conf:.2f}"
-                                    cv2.putText(annotated_frame, label, (x1, y1 - 5), 
+                                    cv2.putText(annotated_frame, label, (x1, y1 - 5),
                                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 except Exception as e:
                     print(f"[主模型级联推理] 暴力行为检测模型推理失败: {e}")
-            
+
             # 使用绘制后的帧进行后续处理
             frame = annotated_frame
             # 缩放帧以加速推理
             resized_frame, scale = resize_frame(frame)
-            
+
             # 处理视频帧 - YOLO检测（优化参数）
             results = model(
                 resized_frame,
@@ -1171,7 +1251,7 @@ def generate_frames_legacy():
                     x1, y1, x2, y2 = box.xyxy[0].cpu()
                     conf = box.conf[0].cpu()
                     cls = int(box.cls[0].cpu())
-                    
+
                     # 将坐标缩放回原始尺寸用于中心点计算
                     orig_x1, orig_y1 = float(x1) / scale, float(y1) / scale
                     orig_x2, orig_y2 = float(x2) / scale, float(y2) / scale
@@ -1190,12 +1270,12 @@ def generate_frames_legacy():
             # 计算性能指标
             frame_end_time = time.time()
             frame_latency = (frame_end_time - frame_start_time) * 1000  # 转换为毫秒
-            
+
             # 更新帧时间历史
             frame_times.append(frame_end_time)
             if len(frame_times) > max_frame_history:
                 frame_times.pop(0)
-            
+
             # 计算FPS（基于最近的帧）
             if len(frame_times) >= 2:
                 time_span = frame_times[-1] - frame_times[0]
@@ -1205,7 +1285,7 @@ def generate_frames_legacy():
                     current_fps = 0
             else:
                 current_fps = 0
-            
+
             # 计算平均置信度（综合三个模型的置信度）
             all_confidences = confidences.copy()
             if main_environment_model_loaded:
@@ -1218,7 +1298,7 @@ def generate_frames_legacy():
                                 all_confidences.append(float(box.conf[0]))
                 except:
                     pass
-            
+
             if main_violence_model_loaded:
                 try:
                     violence_results = main_violence_model.predict(frame, verbose=False)
@@ -1229,9 +1309,9 @@ def generate_frames_legacy():
                                 all_confidences.append(float(box.conf[0]))
                 except:
                     pass
-            
+
             avg_confidence = int(np.mean(all_confidences) * 100) if all_confidences else 0
-            
+
             # 更新主模型统计数据
             main_model_stats['fps'] = int(current_fps)
             main_model_stats['latency'] = int(frame_latency)
@@ -1254,12 +1334,12 @@ def generate_frames_legacy():
                     print("[盲道检测] 检测到左转")
                     answer_content = None
                     ollama_success = False
-                    
+
                     try:
                         print(f"[Ollama] 尝试连接 Ollama 服务，模型: qwen2.5:3b")
                         print(f"[Ollama] 使用的提示词模板:\n{get_prompt_template(user_settings)}")
                         print(f"[Ollama] 用户问题: {left_turn_question}")
-                        
+
                         response = ollama_client.chat(model="qwen2.5:3b", messages=[
                             {"role": "system", "content": get_prompt_template(user_settings)},
                             {"role": "user", "content": left_turn_question}
@@ -1275,19 +1355,19 @@ def generate_frames_legacy():
 
                         print(f"[Ollama] ✓ 成功获取 AI 响应，共 {chunk_count} 个块")
                         print(f"[Ollama] AI 生成内容: {answer_content}")
-                        
+
                         if answer_content.strip():
                             ollama_success = True
                         else:
                             print(f"[Ollama] ✗ AI 返回内容为空")
-                            
+
                     except ConnectionError as conn_error:
                         print(f"[Ollama] ✗ 连接错误 - Ollama 服务可能未启动: {conn_error}")
                     except Exception as ollama_error:
                         print(f"[Ollama] ✗ 其他错误: {type(ollama_error).__name__}: {ollama_error}")
                         import traceback
                         traceback.print_exc()
-                    
+
                     # 如果 Ollama 失败或返回空内容，使用默认提示
                     if not ollama_success or not answer_content:
                         print(f"[盲道检测] 使用默认左转提示")
@@ -1304,12 +1384,12 @@ def generate_frames_legacy():
                     print("[盲道检测] 检测到右转")
                     answer_content = None
                     ollama_success = False
-                    
+
                     try:
                         print(f"[Ollama] 尝试连接 Ollama 服务，模型: qwen2.5:3b")
                         print(f"[Ollama] 使用的提示词模板:\n{get_prompt_template(user_settings)}")
                         print(f"[Ollama] 用户问题: {right_turn_question}")
-                        
+
                         response = ollama_client.chat(model="qwen2.5:3b", messages=[
                             {"role": "system", "content": get_prompt_template(user_settings)},
                             {"role": "user", "content": right_turn_question}
@@ -1325,19 +1405,19 @@ def generate_frames_legacy():
 
                         print(f"[Ollama] ✓ 成功获取 AI 响应，共 {chunk_count} 个块")
                         print(f"[Ollama] AI 生成内容: {answer_content}")
-                        
+
                         if answer_content.strip():
                             ollama_success = True
                         else:
                             print(f"[Ollama] ✗ AI 返回内容为空")
-                            
+
                     except ConnectionError as conn_error:
                         print(f"[Ollama] ✗ 连接错误 - Ollama 服务可能未启动: {conn_error}")
                     except Exception as ollama_error:
                         print(f"[Ollama] ✗ 其他错误: {type(ollama_error).__name__}: {ollama_error}")
                         import traceback
                         traceback.print_exc()
-                    
+
                     # 如果 Ollama 失败或返回空内容，使用默认提示
                     if not ollama_success or not answer_content:
                         print(f"[盲道检测] 使用默认右转提示")
@@ -1373,7 +1453,7 @@ def generate_frames_legacy():
 def generate_blind_road_frames():
     """生成板块二模型一视频帧（仅盲道检测）"""
     global current_video_path, video_active, blind_road_model_stats, frame_times
-    
+
     if not video_active or not current_video_path or not blind_road_model_loaded:
         while not video_active or not current_video_path:
             wait_frame = create_info_frame("请上传视频文件开始分析" if not current_video_path else "盲道检测模型未加载")
@@ -1383,7 +1463,7 @@ def generate_blind_road_frames():
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             time.sleep(1)
         return
-    
+
     try:
         cap = cv2.VideoCapture(current_video_path)
         if not cap.isOpened():
@@ -1395,20 +1475,20 @@ def generate_blind_road_frames():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                 return
-        
+
         frame_times_local = []
         while cap.isOpened() and video_active:
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             frame_start_time = time.time()
-            
+
             # 盲道检测模型推理
             results = blind_road_model.predict(frame, verbose=False)
             if results and len(results) > 0:
                 annotated_frame = results[0].plot()
-                
+
                 # 计算置信度
                 boxes = results[0].boxes
                 confidences = []
@@ -1420,30 +1500,30 @@ def generate_blind_road_frames():
             else:
                 annotated_frame = frame.copy()
                 avg_confidence = 0
-            
+
             # 更新统计信息
             frame_end_time = time.time()
             frame_latency = (frame_end_time - frame_start_time) * 1000
             frame_times_local.append(frame_end_time)
             if len(frame_times_local) > max_frame_history:
                 frame_times_local.pop(0)
-            
+
             if len(frame_times_local) >= 2:
                 time_span = frame_times_local[-1] - frame_times_local[0]
                 current_fps = len(frame_times_local) / time_span if time_span > 0 else 0
             else:
                 current_fps = 0
-            
+
             blind_road_model_stats['fps'] = int(current_fps)
             blind_road_model_stats['latency'] = int(frame_latency)
             blind_road_model_stats['confidence'] = avg_confidence
             blind_road_model_stats['last_update'] = time.time()
-            
+
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             frame_bytes = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        
+
         cap.release()
     except Exception as e:
         print(f"盲道检测模型视频处理错误: {e}")
@@ -1457,7 +1537,7 @@ def generate_blind_road_frames():
 def generate_environment_frames():
     """生成板块二模型二视频帧（仅环境感知）"""
     global current_video_path, video_active, environment_model_stats, frame_times
-    
+
     if not video_active or not current_video_path or not environment_model_loaded:
         while not video_active or not current_video_path:
             wait_frame = create_info_frame("请上传视频文件开始分析" if not current_video_path else "环境感知模型未加载")
@@ -1467,7 +1547,7 @@ def generate_environment_frames():
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             time.sleep(1)
         return
-    
+
     try:
         cap = cv2.VideoCapture(current_video_path)
         if not cap.isOpened():
@@ -1479,20 +1559,20 @@ def generate_environment_frames():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                 return
-        
+
         frame_times_local = []
         while cap.isOpened() and video_active:
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             frame_start_time = time.time()
-            
+
             # 环境感知模型推理
             results = environment_model.predict(frame, verbose=False)
             if results and len(results) > 0:
                 annotated_frame = results[0].plot()
-                
+
                 # 计算置信度
                 boxes = results[0].boxes
                 confidences = []
@@ -1504,30 +1584,30 @@ def generate_environment_frames():
             else:
                 annotated_frame = frame.copy()
                 avg_confidence = 0
-            
+
             # 更新统计信息
             frame_end_time = time.time()
             frame_latency = (frame_end_time - frame_start_time) * 1000
             frame_times_local.append(frame_end_time)
             if len(frame_times_local) > max_frame_history:
                 frame_times_local.pop(0)
-            
+
             if len(frame_times_local) >= 2:
                 time_span = frame_times_local[-1] - frame_times_local[0]
                 current_fps = len(frame_times_local) / time_span if time_span > 0 else 0
             else:
                 current_fps = 0
-            
+
             environment_model_stats['fps'] = int(current_fps)
             environment_model_stats['latency'] = int(frame_latency)
             environment_model_stats['confidence'] = avg_confidence
             environment_model_stats['last_update'] = time.time()
-            
+
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             frame_bytes = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        
+
         cap.release()
     except Exception as e:
         print(f"环境感知模型视频处理错误: {e}")
@@ -1541,7 +1621,7 @@ def generate_environment_frames():
 def generate_violence_frames():
     """生成板块二模型三视频帧（仅暴力行为检测）"""
     global current_video_path, video_active, violence_model_stats, frame_times
-    
+
     if not video_active or not current_video_path or not violence_model_loaded:
         while not video_active or not current_video_path:
             wait_frame = create_info_frame("请上传视频文件开始分析" if not current_video_path else "暴力行为检测模型未加载")
@@ -1551,7 +1631,7 @@ def generate_violence_frames():
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             time.sleep(1)
         return
-    
+
     try:
         cap = cv2.VideoCapture(current_video_path)
         if not cap.isOpened():
@@ -1563,20 +1643,20 @@ def generate_violence_frames():
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                 return
-        
+
         frame_times_local = []
         while cap.isOpened() and video_active:
             ret, frame = cap.read()
             if not ret:
                 break
-            
+
             frame_start_time = time.time()
-            
+
             # 暴力行为检测模型推理
             results = violence_model.predict(frame, verbose=False)
             if results and len(results) > 0:
                 annotated_frame = results[0].plot()
-                
+
                 # 计算置信度
                 boxes = results[0].boxes
                 confidences = []
@@ -1588,30 +1668,30 @@ def generate_violence_frames():
             else:
                 annotated_frame = frame.copy()
                 avg_confidence = 0
-            
+
             # 更新统计信息
             frame_end_time = time.time()
             frame_latency = (frame_end_time - frame_start_time) * 1000
             frame_times_local.append(frame_end_time)
             if len(frame_times_local) > max_frame_history:
                 frame_times_local.pop(0)
-            
+
             if len(frame_times_local) >= 2:
                 time_span = frame_times_local[-1] - frame_times_local[0]
                 current_fps = len(frame_times_local) / time_span if time_span > 0 else 0
             else:
                 current_fps = 0
-            
+
             violence_model_stats['fps'] = int(current_fps)
             violence_model_stats['latency'] = int(frame_latency)
             violence_model_stats['confidence'] = avg_confidence
             violence_model_stats['last_update'] = time.time()
-            
+
             ret, buffer = cv2.imencode('.jpg', annotated_frame)
             frame_bytes = buffer.tobytes()
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        
+
         cap.release()
     except Exception as e:
         print(f"暴力行为检测模型视频处理错误: {e}")
@@ -1742,7 +1822,7 @@ def upload_video():
         current_video_path = file_path
         video_active = True
         print(f"成功上传视频: {file_path}")
-        
+
         # ========== 启动异步处理管道 ==========
         try:
             start_async_processing(file_path)
@@ -1768,11 +1848,11 @@ def upload_video():
 def get_model_stats():
     """获取模型性能统计数据（兼容旧版本，默认返回主模型）"""
     global main_model_stats, video_active
-    
+
     # 检查视频是否正在运行，如果超过3秒没有更新，认为已停止
     current_time = time.time()
     is_active = video_active and (current_time - main_model_stats.get('last_update', 0)) < 3
-    
+
     if not is_active:
         # 视频未运行时返回默认值
         return jsonify({
@@ -1782,7 +1862,7 @@ def get_model_stats():
             "latency": 0,
             "confidence": 0
         })
-    
+
     # 返回实时性能数据
     return jsonify({
         "status": "success",
@@ -1808,10 +1888,10 @@ def get_main_stats():
 def get_main_model_stats():
     """获取板块一主模型性能统计数据"""
     global main_model_stats, video_active
-    
+
     current_time = time.time()
     is_active = video_active and (current_time - main_model_stats.get('last_update', 0)) < 3
-    
+
     if not is_active:
         return jsonify({
             "status": "success",
@@ -1820,7 +1900,7 @@ def get_main_model_stats():
             "latency": 0,
             "confidence": 0
         })
-    
+
     return jsonify({
         "status": "success",
         "active": True,
@@ -1833,10 +1913,10 @@ def get_main_model_stats():
 def get_blind_road_model_stats():
     """获取板块二模型一（盲道检测）性能统计数据"""
     global blind_road_model_stats, video_active
-    
+
     current_time = time.time()
     is_active = video_active and (current_time - blind_road_model_stats.get('last_update', 0)) < 3
-    
+
     if not is_active:
         return jsonify({
             "status": "success",
@@ -1845,7 +1925,7 @@ def get_blind_road_model_stats():
             "latency": 0,
             "confidence": 0
         })
-    
+
     return jsonify({
         "status": "success",
         "active": True,
@@ -1858,10 +1938,10 @@ def get_blind_road_model_stats():
 def get_environment_model_stats():
     """获取板块二模型二（环境感知）性能统计数据"""
     global environment_model_stats, video_active
-    
+
     current_time = time.time()
     is_active = video_active and (current_time - environment_model_stats.get('last_update', 0)) < 3
-    
+
     if not is_active:
         return jsonify({
             "status": "success",
@@ -1870,7 +1950,7 @@ def get_environment_model_stats():
             "latency": 0,
             "confidence": 0
         })
-    
+
     return jsonify({
         "status": "success",
         "active": True,
@@ -1883,10 +1963,10 @@ def get_environment_model_stats():
 def get_violence_model_stats():
     """获取板块二模型三（暴力行为检测）性能统计数据"""
     global violence_model_stats, video_active
-    
+
     current_time = time.time()
     is_active = video_active and (current_time - violence_model_stats.get('last_update', 0)) < 3
-    
+
     if not is_active:
         return jsonify({
             "status": "success",
@@ -1895,7 +1975,7 @@ def get_violence_model_stats():
             "latency": 0,
             "confidence": 0
         })
-    
+
     return jsonify({
         "status": "success",
         "active": True,
@@ -1912,7 +1992,7 @@ def get_models_status():
     global blind_road_model_loaded, environment_model_loaded, violence_model_loaded
     global MAIN_BLIND_ROAD_MODEL_PATH, MAIN_ENVIRONMENT_MODEL_PATH, MAIN_VIOLENCE_MODEL_PATH
     global BLIND_ROAD_MODEL_PATH, ENVIRONMENT_MODEL_PATH, VIOLENCE_MODEL_PATH
-    
+
     return jsonify({
         "status": "success",
         "models": {
@@ -1954,4 +2034,4 @@ def get_models_status():
                 "status": "running" if violence_model_loaded else "pending"
             }
         }
-    })
+})
