@@ -264,6 +264,11 @@ combine_buffer = defaultdict(dict)         # 临时缓存同一帧三模型结�
 # ---------------------------------------
 result_queue = queue.Queue(maxsize=3)   # 推理线程 → 显示线程
 
+# 三个子模块的显示队列（推理线程直接产出已绘制帧，供端点消费）
+blind_display_queue = queue.Queue(maxsize=3)
+env_display_queue   = queue.Queue(maxsize=3)
+vio_display_queue   = queue.Queue(maxsize=3)
+
 # 线程控制字典
 thread_control = {
     'running': False,           # 主开关：控制所有线程运行
@@ -286,6 +291,15 @@ performance_metrics = {
     'inference_fps': 0,         # 推理速度
     'frame_drop_count': 0,      # 丢帧统计
     'last_update': 0
+}
+
+# 受控抽帧策略：每 N 帧推理一次，其余帧复用上次结果
+INFER_EVERY_N = 2  # 可调：2 表示每隔一帧推理一次
+# 记录各模型最近一次推理的输出，供跳帧时复用
+last_results = {
+    'blind_road': None,
+    'environment': None,
+    'violence': None,
 }
 
 # 转向提示问题
@@ -330,7 +344,7 @@ def resize_frame(frame, max_size=MAX_FRAME_SIZE):
 # ============== 通用推理线程函数 (Patch B) ==============
 
 def push_inference(in_q, model, tag, color):
-    """从专用队列取帧→推理→绘制→写 result_queue 并更新 stats"""
+    """从专用队列取帧→（受控抽帧）推理→写入合成队列→更新stats"""
     fps_buf = []
     while thread_control['running']:
         try:
@@ -341,19 +355,69 @@ def push_inference(in_q, model, tag, color):
             continue
 
         frame = item['frame']
-        t0 = time.time()
-        results = model.predict(frame, verbose=False)
+        fid = item.get('fid', 0)
+
+        # 受控抽帧：只有当满足条件时才进行推理，否则复用最近结果
+        do_infer = (fid % INFER_EVERY_N == 0) or (last_results.get(tag) is None)
+        t0 = time.time() if do_infer else None
+        results = model.predict(frame, verbose=False) if do_infer else None
         if tag == 'violence' and results:
             print('[DEBUG-push]', 'cls:', [int(b.cls[0]) for b in results[0].boxes], 'names:', getattr(results[0], 'names', {}))
-        latency = (time.time() - t0) * 1000
+        latency = (time.time() - t0) * 1000 if do_infer else 0
 
+        # 计算/复用结果
+        out_boxes = None
+        out_names = {}
         confs = []
         if results:
-            for box in results[0].boxes:
-                xyxy = box.xyxy[0].cpu().numpy().astype(int)
-                x1, y1, x2, y2 = xyxy
-                conf = float(box.conf[0])
-                confs.append(conf)
+            out_boxes = results[0].boxes
+            out_names = getattr(results[0], 'names', {})
+            for box in out_boxes:
+                confs.append(float(box.conf[0]))
+            # 记录最近结果供跳帧复用
+            last_results[tag] = {
+                'boxes': out_boxes,
+                'names': out_names,
+            }
+        else:
+            # 复用上次推理结果
+            lr = last_results.get(tag)
+            if lr:
+                out_boxes = lr.get('boxes', None)
+                out_names = lr.get('names', {})
+
+        # 为子模块显示队列生成已绘制帧
+        annotated = frame.copy()
+        if out_boxes is not None:
+            if tag == 'blind_road':
+                for box in out_boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(annotated, f"blind:{conf:.2f}", (x1, y1-5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+            elif tag == 'environment':
+                for box in out_boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cls = int(box.cls[0])
+                    label = out_names.get(cls, 'obj')
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    cv2.putText(annotated, f"{label}:{conf:.2f}", (x1, y1-5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 2)
+            elif tag == 'violence':
+                for box in out_boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    conf = float(box.conf[0])
+                    cls_id = int(box.cls[0])
+                    name_map = out_names or {}
+                    cls_name = (name_map.get(cls_id, '') or '').lower()
+                    is_fight = (cls_name == 'fight') if cls_name else (cls_id == 1)
+                    color_v = (0, 255, 255) if is_fight else (0, 128, 255)
+                    label = f"{'FIGHT' if is_fight else 'NOFIGHT'}:{conf:.2f}"
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), color_v, 3)
+                    cv2.putText(annotated, label, (x1, y1 - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color_v, 2)
 
         # FPS 计算
         fps_buf.append(time.time())
@@ -365,12 +429,24 @@ def push_inference(in_q, model, tag, color):
         # ---------- 将结果发送给 combiner_worker ----------
         try:
             combined_queue.put_nowait({
-                'fid': item.get('fid', 0),
+                'fid': fid,
                 'frame': frame,               # 原图副本
                 'tag': tag,                   # blind_road / environment / violence
-                'boxes': results[0].boxes if results else None,
-                'names': getattr(results[0], 'names', {}) if results else {}
+                'boxes': out_boxes,
+                'names': out_names
             })
+        except queue.Full:
+            pass
+
+        # ---------- 推送到对应显示队列（供子模块端点消费） ----------
+        try:
+            pkt = {'frame': annotated}
+            if tag == 'blind_road':
+                blind_display_queue.put_nowait(pkt)
+            elif tag == 'environment':
+                env_display_queue.put_nowait(pkt)
+            elif tag == 'violence':
+                vio_display_queue.put_nowait(pkt)
         except queue.Full:
             pass
 
@@ -580,7 +656,7 @@ def start_async_processing(video_path):
     """
     启动异步视频处理管道：读帧线程 + 推理线程
     """
-    global reader_thread, inference_thread
+    global reader_thread, inference_thread, combine_buffer
 
     print(f"[异步管道] 准备启动异步处理: {video_path}")
 
@@ -590,9 +666,32 @@ def start_async_processing(video_path):
             print("[异步管道] 检测到旧线程，先停止...")
             stop_async_processing()
 
-        # 清空队列
+        # 清空所有队列与合并缓冲，避免旧帧残留导致显示卡住
         clear_queue(frame_queue)
         clear_queue(result_queue)
+        clear_queue(blind_queue)
+        clear_queue(env_queue)
+        clear_queue(vio_queue)
+        clear_queue(combined_queue)
+        clear_queue(blind_display_queue)
+        clear_queue(env_display_queue)
+        clear_queue(vio_display_queue)
+        combine_buffer = defaultdict(dict)
+        # 重置跳帧缓存与性能指标
+        try:
+            last_results['blind_road'] = None
+            last_results['environment'] = None
+            last_results['violence'] = None
+            performance_metrics.update({
+                'frame_queue_size': 0,
+                'result_queue_size': 0,
+                'reader_fps': 0,
+                'inference_fps': 0,
+                'frame_drop_count': 0,
+                'last_update': 0
+            })
+        except Exception:
+            pass
 
         # 打开视频文件
         cap = cv2.VideoCapture(video_path)
@@ -666,15 +765,24 @@ def stop_async_processing():
         thread_control['video_cap'].release()
         thread_control['video_cap'] = None
 
-    # 清理队列
+    # 清理所有队列，确保不会有残帧或旧事件造成闪现
     clear_queue(frame_queue)
     clear_queue(result_queue)
+    clear_queue(blind_queue)
+    clear_queue(env_queue)
+    clear_queue(vio_queue)
+    clear_queue(combined_queue)
+    clear_queue(blind_display_queue)
+    clear_queue(env_display_queue)
+    clear_queue(vio_display_queue)
+    combine_buffer.clear()
 
     # 重置标志
     thread_control['reader_alive'] = False
     thread_control['inference_alive'] = False
+    thread_control['running'] = False
 
-    print("[异步管道] ✓ 异步处理已停止")
+    print("[异步管道] ✓ 异步处理已停止，所有队列已清空")
 
 
 # ==================== 异步线程工作函数 ====================
@@ -972,8 +1080,9 @@ def get_user_settings_for_video():
 
 
 def generate_main_frames():
-    """生成板块一主模型视频帧（级联推理：盲道+环境感知+暴力行为）"""
-    global last_call_time, current_speech_text, current_video_path, video_active, main_model_stats, frame_times
+    """兼容旧端点：直接复用异步生成器，保证主模型始终有帧输出"""
+    yield from generate_frames()
+
 def generate_frames():
     """
     显示生成器（异步版本）：从result_queue获取处理好的帧并流式传输
@@ -1053,6 +1162,37 @@ def generate_frames():
         ret, buffer = cv2.imencode('.jpg', end_frame)
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+
+# ============== 通用显示队列流式输出生成器 ==============
+def _stream_from_display_queue(q, wait_text: str):
+    """从指定显示队列输出JPEG流。未开始时显示占位提示。"""
+    # 未启动时提示
+    if not thread_control['running']:
+        while not thread_control['running']:
+            wait_frame = create_info_frame(wait_text)
+            ret, buf = cv2.imencode('.jpg', wait_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+            time.sleep(0.8)
+
+    # 运行时从队列取帧
+    while True:
+        try:
+            item = q.get(timeout=1.0)
+            frame = item['frame']
+            ret, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+        except queue.Empty:
+            if not thread_control['running']:
+                # 结束占位
+                end_frame = create_info_frame("视频已播放完毕，请上传新视频")
+                ret, buf = cv2.imencode('.jpg', end_frame)
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+                break
+            # 运行中但暂时无帧，继续等待
+            continue
 
 
 # 保留旧版generate_frames作为备份（可选）
@@ -1714,18 +1854,21 @@ def video_feed_main():
 
 @video_bp.route('/video_feed/blind_road')
 def video_feed_blind_road():
-    """板块二模型一（盲道检测）视频流式传输端点"""
-    return Response(generate_blind_road_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """板块二模型一（盲道检测）视频流式传输端点（改为从显示队列流出）"""
+    return Response(_stream_from_display_queue(blind_display_queue, "等待测试开始"),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @video_bp.route('/video_feed/environment')
 def video_feed_environment():
-    """板块二模型二（环境感知）视频流式传输端点"""
-    return Response(generate_environment_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """板块二模型二（环境感知）视频流式传输端点（改为从显示队列流出）"""
+    return Response(_stream_from_display_queue(env_display_queue, "等待测试开始"),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @video_bp.route('/video_feed/violence')
 def video_feed_violence():
-    """板块二模型三（暴力行为检测）视频流式传输端点"""
-    return Response(generate_violence_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    """板块二模型三（暴力行为检测）视频流式传输端点（改为从显示队列流出）"""
+    return Response(_stream_from_display_queue(vio_display_queue, "等待测试开始"),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
 @video_bp.route('/stream_speech_text')
@@ -1761,6 +1904,24 @@ def start_test():
     return jsonify({"status": "success", "message": "视频处理已开始"})
 
 
+@video_bp.route('/stop_test', methods=['POST'])
+def stop_test():
+    """停止当前视频处理并彻底清理所有状态，防止旧视频闪现"""
+    global video_active, current_video_path
+    try:
+        # 停止异步处理线程（会清空所有队列）
+        stop_async_processing()
+    except Exception as e:
+        print(f"[API Call] /stop_test 异常: {e}")
+    
+    # 重置全局状态
+    video_active = False
+    current_video_path = None
+    
+    print("[API Call] /stop_test: 视频处理已停止，所有状态已重置")
+    return jsonify({"status": "success", "message": "视频处理已停止"})
+
+
 @video_bp.route('/upload_video', methods=['POST'])
 def upload_video():
     """处理视频上传"""
@@ -1780,6 +1941,11 @@ def upload_video():
             {"status": "error", "message": f"不支持的文件类型，允许的类型: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
 
     try:
+        # 确保旧管道完全停止，避免资源竞争导致新视频不启动
+        try:
+            stop_async_processing()
+        except Exception as e:
+            print(f"[上传] 停止旧处理异常: {e}")
         # 创建上传目录（如果不存在）
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 

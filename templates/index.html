@@ -4720,7 +4720,34 @@
 
         // 模型性能数据获取和更新
         // 重新上传视频
-        function resetVideoUpload() {
+        async function resetVideoUpload() {
+            // 1. 通知后端停止旧视频处理并清空所有队列
+            try {
+                await fetch('/stop_test', { method: 'POST' });
+                console.log('[resetVideoUpload] 已通知后端停止旧处理流程');
+            } catch (e) {
+                console.warn('[resetVideoUpload] /stop_test 调用失败', e);
+            }
+
+            // 2. 清空所有视频流的src，彻底防止浏览器保留最后一帧
+            const feedIds = ['uploadVideoImg', 'main-video-feed', 'blind_road_video_feed_img', 'environment_video_feed_img', 'violence_video_feed_img'];
+            feedIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.src = 'about:blank';  // 清空最后一帧
+                    el.style.display = 'none';
+                }
+            });
+            console.log('[resetVideoUpload] 已清空所有视频流');
+
+            // 3. 复位占位符显示
+            const placeholderIds = ['blind_road_video_placeholder', 'environment_video_placeholder', 'violence_video_placeholder'];
+            placeholderIds.forEach(id => {
+                const ph = document.getElementById(id);
+                if (ph) ph.style.display = 'flex';
+            });
+
+            // 4. 还原上传区UI
             const uploadArea = document.getElementById('uploadArea');
             const uploadVideoFeed = document.getElementById('uploadVideoFeed');
             const fileInput = document.getElementById('videoFile');
@@ -4736,9 +4763,11 @@
             if (fileName) fileName.textContent = '未选择文件';
             if (uploadStatus) uploadStatus.textContent = '';
 
-            // 重置上传按钮
+            // 5. 重置上传按钮
             const uploadBtn = document.getElementById('uploadBtn');
             if (uploadBtn) uploadBtn.disabled = true;
+            
+            console.log('[resetVideoUpload] 重新上传流程完成，已清除所有旧数据');
         }
 
         async function fetchModelStats() {
