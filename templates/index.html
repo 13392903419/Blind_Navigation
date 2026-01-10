@@ -4804,6 +4804,9 @@
             if (uploadBtn) uploadBtn.disabled = true;
             
             console.log('[resetVideoUpload] 重新上传流程完成，已清除所有旧数据');
+
+            // 6. 强制刷新所有流的连接，准备下一次上传（加时间戳防缓存）
+            reloadAllStreams(Date.now());
         }
 
         async function fetchModelStats() {

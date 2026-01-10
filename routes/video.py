@@ -201,6 +201,35 @@ video_active = False
 last_call_time = 0
 current_speech_text = ""
 
+# 语音播报优化 - Stage 1
+SPEECH_COOLDOWN = 3.0  # 语音播报冷却时间（秒）
+last_speech_time = 0  # 最后一次语音播报的时间
+last_direction = None  # 最后一次播报的方向（用于去重）
+last_obstacle_type = None  # 最后一次播报的障碍物类型（用于去重）
+
+# 静态提示词库（替代LLM生成）
+PROMPT_LIBRARY = {
+    'blind_road': {
+        'left': '盲道向左转',
+        'right': '盲道向右转',
+        'straight': '直行，盲道正确方向',
+        'change': '盲道方向变化，请注意'
+    },
+    'obstacles': {
+        'step': '警告，前方有障碍',
+        'person': '前方有行人，请让行',
+        'interrupt': '盲道中断，请绕行'
+    },
+    'encouragement': [
+        '很好，继续',
+        '走得不错，加油',
+        '很好，加油'
+    ]
+}
+
+import random
+random.seed()
+
 # 性能统计变量 - 为每个模型独立存储
 main_model_stats = {
     'fps': 0,
@@ -450,6 +479,79 @@ def push_inference(in_q, model, tag, color):
         except queue.Full:
             pass
 
+# =============== 语音播报辅助函数 ===============
+def get_blind_road_prompt(direction):
+    """
+    根据方向返回盲道提示词
+    Args:
+        direction: 'left', 'right', 'straight', 'change'
+    Returns:
+        str: 提示文本
+    """
+    return PROMPT_LIBRARY['blind_road'].get(direction, '盲道方向变化')
+
+def get_obstacle_prompt(obstacle_type):
+    """
+    根据障碍物类型返回提示词
+    Args:
+        obstacle_type: 'step', 'person', 'interrupt'
+    Returns:
+        str: 提示文本
+    """
+    return PROMPT_LIBRARY['obstacles'].get(obstacle_type, '前方有障碍')
+
+def get_encouragement_prompt():
+    """
+    返回随机鼓励词（30%概率）
+    Returns:
+        str: 鼓励文本或空字符串
+    """
+    if random.random() < 0.3:
+        return random.choice(PROMPT_LIBRARY['encouragement'])
+    return ""
+
+def should_speak_now(current_time):
+    """
+    检查是否应该播报（冷却检查）
+    Args:
+        current_time: 当前时间戳
+    Returns:
+        bool: 是否应该播报
+    """
+    global last_speech_time
+    if current_time - last_speech_time >= SPEECH_COOLDOWN:
+        last_speech_time = current_time
+        return True
+    return False
+
+def check_direction_change(new_direction):
+    """
+    检查方向是否变化（去重）
+    Args:
+        new_direction: 新的方向值
+    Returns:
+        bool: 方向是否有变化
+    """
+    global last_direction
+    if new_direction != last_direction:
+        last_direction = new_direction
+        return True
+    return False
+
+def check_obstacle_change(obstacle_type):
+    """
+    检查障碍物类型是否变化（去重）
+    Args:
+        obstacle_type: 新的障碍物类型
+    Returns:
+        bool: 障碍物类型是否有变化
+    """
+    global last_obstacle_type
+    if obstacle_type != last_obstacle_type:
+        last_obstacle_type = obstacle_type
+        return True
+    return False
+
 # =============== Combiner 线程 ===============
 # 全局变量：跟踪各检测类型上次提示的时间（避免重复提示）
 last_fight_speak_time = 0
@@ -462,6 +564,7 @@ def combiner_worker():
     并根据检测结果输出相应的语音提示
     """
     global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
+    global last_direction, last_obstacle_type, last_speech_time
 
     # 各类型的提示间隔（秒）
     FIGHT_SPEAK_INTERVAL = 2.0
@@ -503,16 +606,22 @@ def combiner_worker():
 
             # 检测到盲道且置信度高于0.6时，触发语音提示
             if blind_detected and blind_confidences and max(blind_confidences) > 0.6:
-                if current_time - last_blind_road_speak_time >= BLIND_ROAD_SPEAK_INTERVAL:
-                    try:
-                        user_settings = get_user_settings_for_video()
-                        speech_content = "请沿盲道行走"
-                        current_speech_text = speech_content
-                        speak(speech_content, user_settings)
-                        print("[语音提示] 盲道检测 - 请沿盲道行走")
-                        last_blind_road_speak_time = current_time
-                    except Exception as e:
-                        print(f"[语音提示] 盲道语音播放错误: {e}")
+                if should_speak_now(current_time):
+                    # 简化盲道提示：始终使用"直行"提示，除非有其他标记
+                    if check_direction_change('straight'):
+                        try:
+                            user_settings = get_user_settings_for_video()
+                            speech_content = get_blind_road_prompt('straight')
+                            # 30% 概率添加鼓励词
+                            encouragement = get_encouragement_prompt()
+                            if encouragement:
+                                speech_content += "，" + encouragement
+                            current_speech_text = speech_content
+                            speak(speech_content, user_settings)
+                            print(f"[语音提示] 盲道检测 - {speech_content}")
+                        except Exception as e:
+                            print(f"[语音提示] 盲道语音播放错误: {e}")
+                    last_blind_road_speak_time = current_time
 
             # 环境感知绘制
             e_res = buf['environment']
@@ -553,17 +662,19 @@ def combiner_worker():
                 # 找到置信度最高的障碍物
                 best_obstacle = max(obstacle_positions, key=lambda x: x[1])
                 if best_obstacle[1] > 0.7:
-                    if current_time - last_obstacle_speak_time >= OBSTACLE_SPEAK_INTERVAL:
-                        try:
-                            user_settings = get_user_settings_for_video()
-                            position = best_obstacle[0]
-                            speech_content = f"{position}有障碍，请注意避让"
-                            current_speech_text = speech_content
-                            speak(speech_content, user_settings)
-                            print(f"[语音提示] 障碍物检测 - {position}有障碍，请注意避让")
-                            last_obstacle_speak_time = current_time
-                        except Exception as e:
-                            print(f"[语音提示] 障碍物语音播放错误: {e}")
+                    if should_speak_now(current_time):
+                        # 简化障碍物提示：使用通用障碍物提示
+                        obstacle_type = 'step'  # 默认提示类型
+                        if check_obstacle_change(obstacle_type):
+                            try:
+                                user_settings = get_user_settings_for_video()
+                                speech_content = get_obstacle_prompt(obstacle_type)
+                                current_speech_text = speech_content
+                                speak(speech_content, user_settings)
+                                print(f"[语音提示] 障碍物检测 - {speech_content}")
+                                last_obstacle_speak_time = current_time
+                            except Exception as e:
+                                print(f"[语音提示] 障碍物语音播放错误: {e}")
 
             # 暴力绘制
             v_res = buf['violence']
@@ -597,16 +708,19 @@ def combiner_worker():
 
             # 检测到fight行为且置信度高于0.6时，触发语音提示
             if fight_detected and fight_confidence > 0.6:
-                if current_time - last_fight_speak_time >= FIGHT_SPEAK_INTERVAL:
-                    try:
-                        user_settings = get_user_settings_for_video()
-                        speech_content = "注意小心"
-                        current_speech_text = speech_content
-                        speak(speech_content, user_settings)
-                        print(f"[语音提示] 暴力行为检测 - 注意小心 (置信度: {fight_confidence:.2f})")
-                        last_fight_speak_time = current_time
-                    except Exception as e:
-                        print(f"[语音提示] 暴力行为语音播放错误: {e}")
+                if should_speak_now(current_time):
+                    # 暴力行为提示：使用通用警告
+                    obstacle_type = 'fight'  # 使用"中断"作为紧急类型
+                    if check_obstacle_change(obstacle_type):
+                        try:
+                            user_settings = get_user_settings_for_video()
+                            speech_content = "注意小心"
+                            current_speech_text = speech_content
+                            speak(speech_content, user_settings)
+                            print(f"[语音提示] 暴力行为检测 - 注意小心 (置信度: {fight_confidence:.2f})")
+                            last_fight_speak_time = current_time
+                        except Exception as e:
+                            print(f"[语音提示] 暴力行为语音播放错误: {e}")
 
             # 送给显示线程
             try:
@@ -657,6 +771,8 @@ def start_async_processing(video_path):
     启动异步视频处理管道：读帧线程 + 推理线程
     """
     global reader_thread, inference_thread, combine_buffer
+    global last_direction, last_obstacle_type, last_speech_time
+    global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
 
     print(f"[异步管道] 准备启动异步处理: {video_path}")
 
@@ -692,6 +808,15 @@ def start_async_processing(video_path):
             })
         except Exception:
             pass
+
+        # 重置语音播报相关的去重/冷却状态，避免跨视频遗留
+        last_direction = None
+        last_obstacle_type = None
+        last_speech_time = 0
+        last_fight_speak_time = 0
+        last_obstacle_speak_time = 0
+        last_blind_road_speak_time = 0
+        current_speech_text = ""
 
         # 打开视频文件
         cap = cv2.VideoCapture(video_path)

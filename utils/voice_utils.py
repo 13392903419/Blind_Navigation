@@ -158,44 +158,17 @@ def speak(text, user_settings):
 
 def get_prompt_template(user_settings):
     """
-    根据用户设置生成AI提示模板
+    获取提示模板（已简化）
+    
+    注意：Stage 1 优化后，语音播报已改为使用静态提示词库，
+    本函数保留用于向后兼容，实际不再调用LLM。
     
     Args:
         user_settings: 用户设置字典
         
     Returns:
-        str: AI提示模板
+        str: 简单的提示文本
     """
-    gender_term = ""
-    age_term = ""
-
-    if user_settings["gender"] == "男":
-        gender_term = "先生"
-    elif user_settings["gender"] == "女":
-        gender_term = "女士"
-
-    if user_settings["age"] == "老年":
-        age_term = "年长的"
-    elif user_settings["age"] == "青年":
-        age_term = "年轻的"
-
-    prompt = f'''
-你是一个服务于盲人行走的语音导航小助手。
-你的用户是{age_term}{user_settings["name"]}{gender_term}。
-
-重要要求：
-1. 在回复时，你必须明确称呼用户的名字"{user_settings["name"]}{gender_term}"，例如："{user_settings["name"]}{gender_term}，盲道向右转了"。
-2. 你必须说清楚盲道转向方位（左？右？），确保盲人知道要往哪个方向走。
-3. 你的语气要温柔、亲切且充满元气。
-4. 回复要简短明了，便于盲人快速理解。
-5. 注意：盲人因为看不见路面情况，所以需要你清晰准确的语音行走提示。
-'''
-
-    # 如果开启了鼓励功能，在提示词中添加相关要求
-    if user_settings["encourage"] == "开":
-        prompt += f'''
-6. 请在引导方向的同时，适当给予用户温暖的鼓励和正面的肯定，例如称赞{user_settings["name"]}{gender_term}走得好、进步明显，或者鼓励{user_settings["name"]}{gender_term}继续保持自信等。
-'''
-
-    return prompt
+    # Stage 1优化：不再调用LLM，直接返回简单提示
+    return "正在进行语音导航"
 
