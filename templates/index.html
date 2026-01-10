@@ -3480,6 +3480,40 @@
             e.stopPropagation();
         }
 
+        // 强制重建所有视频流的 <img> 连接，避免重新上传后浏览器不自动重连 MJPEG
+        function reloadAllStreams(ver = Date.now()) {
+            const suffix = `?v=${ver}`;
+
+            // 主模型流（上传区显示）
+            const uploadVideoImg = document.getElementById('uploadVideoImg');
+            if (uploadVideoImg) {
+                uploadVideoImg.src = `{{ url_for('video.video_feed_main') }}${suffix}`;
+                uploadVideoImg.style.display = 'block';
+            }
+
+            // 主模型流（顶部展示卡片）
+            const mainFeed = document.getElementById('main-video-feed');
+            if (mainFeed) {
+                mainFeed.src = `/video_feed/main${suffix}`;
+                mainFeed.style.display = 'block';
+            }
+
+            // 三个子模块流
+            const streams = [
+                ['blind_road_video_feed_img', '/video_feed/blind_road'],
+                ['environment_video_feed_img', '/video_feed/environment'],
+                ['violence_video_feed_img', '/video_feed/violence'],
+            ];
+
+            streams.forEach(([id, url]) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.src = `${url}${suffix}`;
+                    el.style.display = 'block';
+                }
+            });
+        }
+
         ['dragenter', 'dragover'].forEach(eventName => {
             dropArea.addEventListener(eventName, highlight, false);
         });
@@ -3646,10 +3680,12 @@
                     if (uploadArea && uploadVideoFeed && uploadVideoImg) {
                         uploadArea.style.display = 'none';
                         uploadVideoFeed.style.display = 'block';
-                        // 刷新视频流
+                        // 刷新主视频流
                         uploadVideoImg.src = `{{ url_for('video.video_feed_main') }}?t=${Date.now()}`;
                         // 通知后端开始测试并启动性能轮询
                         fetch('/start_test',{method:'POST'}).then(()=>startModelStatsPolling());
+                        // 前端强制重建三路子模块流，避免重新上传后浏览器不自动重连
+                        reloadAllStreams();
                     } else {
                         // 兼容旧版本：刷新所有视频流
                         const videoFeeds = document.querySelectorAll('.video-feed img');
