@@ -201,34 +201,96 @@ video_active = False
 last_call_time = 0
 current_speech_text = ""
 
-# 语音播报优化 - Stage 1
+# 语音播报优化 - 混合架构（静态优先 + 大模型缓存）
 SPEECH_COOLDOWN = 3.0  # 语音播报冷却时间（秒）
 last_speech_time = 0  # 最后一次语音播报的时间
 last_direction = None  # 最后一次播报的方向（用于去重）
 last_obstacle_type = None  # 最后一次播报的障碍物类型（用于去重）
 
-# 静态提示词库（替代LLM生成）
+# === 混合语音策略配置 ===
+USE_LLM_FOR_COMPLEX = True   # 是否对复杂场景启用大模型
+LLM_TIMEOUT = 0.8            # 大模型超时时间（秒）
+LLM_CACHE_SIZE = 100         # 缓存大小
+LLM_MIN_OBSTACLES = 2        # 触发大模型的最小障碍物数量
+
+import random
+import concurrent.futures
+from collections import OrderedDict
+random.seed()
+
+# 静态提示词库（高频/紧急场景，零延迟）
 PROMPT_LIBRARY = {
-    'blind_road': {
-        'left': '盲道向左转',
-        'right': '盲道向右转',
-        'straight': '直行，盲道正确方向',
-        'change': '盲道方向变化，请注意'
+    # 方向提示（最高优先级，必须快）
+    'direction': {
+        'left': '左转',
+        'right': '右转',
+        'straight': '直行',
+        'change': '盲道方向变化'
     },
+    # 障碍物提示
     'obstacles': {
-        'step': '警告，前方有障碍',
-        'person': '前方有行人，请让行',
-        'interrupt': '盲道中断，请绕行'
+        'step': '有台阶',
+        'stairs': '警告，有台阶',
+        'person': '有行人',
+        'vehicle': '注意车辆',
+        'construction': '有施工',
+        'interrupt': '盲道中断',
+        'default': '有障碍'
     },
+    # 紧急提示（最高优先级，立即播报）
+    'urgent': {
+        'danger': '停！危险',
+        'collision': '小心碰撞',
+        'fight': '注意安全，远离危险'
+    },
+    # 位置修饰词
+    'position': {
+        'left': '左侧',
+        'right': '右侧',
+        'front': '前方'
+    },
+    # 鼓励词（低优先级）
     'encouragement': [
         '很好，继续',
-        '走得不错，加油',
-        '很好，加油'
+        '走得不错',
+        '加油',
+        '状态不错'
     ]
 }
 
-import random
-random.seed()
+# LLM 生成结果缓存（LRU策略）
+class LRUCache(OrderedDict):
+    def __init__(self, maxsize=100):
+        super().__init__()
+        self.maxsize = maxsize
+    
+    def get(self, key, default=None):
+        if key in self:
+            self.move_to_end(key)
+            return self[key]
+        return default
+    
+    def set(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        self[key] = value
+        if len(self) > self.maxsize:
+            self.popitem(last=False)
+
+llm_cache = LRUCache(maxsize=LLM_CACHE_SIZE)
+
+# 预生成的常见场景缓存（启动时填充）
+PREGENERATED_PROMPTS = {
+    ('left', 'person'): '左转，注意避让前方行人',
+    ('right', 'person'): '右转，注意避让前方行人',
+    ('straight', 'person'): '直行，前方有行人请注意',
+    ('left', 'stairs'): '左转后有台阶，请小心',
+    ('right', 'stairs'): '右转后有台阶，请小心',
+    ('straight', 'stairs'): '直行，前方有台阶',
+    ('left', 'vehicle'): '左转，注意左侧车辆',
+    ('right', 'vehicle'): '右转，注意右侧车辆',
+    ('straight', 'construction'): '直行，前方有施工请绕行',
+}
 
 # 性能统计变量 - 为每个模型独立存储
 main_model_stats = {
@@ -480,25 +542,47 @@ def push_inference(in_q, model, tag, color):
             pass
 
 # =============== 语音播报辅助函数 ===============
-def get_blind_road_prompt(direction):
-    """
-    根据方向返回盲道提示词
-    Args:
-        direction: 'left', 'right', 'straight', 'change'
-    Returns:
-        str: 提示文本
-    """
-    return PROMPT_LIBRARY['blind_road'].get(direction, '盲道方向变化')
+# =============== 混合语音生成函数 ===============
 
-def get_obstacle_prompt(obstacle_type):
+def get_static_prompt(direction, obstacle_type=None, position=None):
     """
-    根据障碍物类型返回提示词
+    获取静态提示词（零延迟）
     Args:
-        obstacle_type: 'step', 'person', 'interrupt'
+        direction: 方向 'left', 'right', 'straight', 'change'
+        obstacle_type: 障碍物类型（可选）
+        position: 障碍物位置（可选）
     Returns:
-        str: 提示文本
+        str: 静态提示文本
     """
-    return PROMPT_LIBRARY['obstacles'].get(obstacle_type, '前方有障碍')
+    parts = []
+    
+    # 方向提示
+    dir_text = PROMPT_LIBRARY['direction'].get(direction, '')
+    if dir_text:
+        parts.append(dir_text)
+    
+    # 障碍物提示
+    if obstacle_type:
+        obs_text = PROMPT_LIBRARY['obstacles'].get(obstacle_type, PROMPT_LIBRARY['obstacles']['default'])
+        if position:
+            pos_text = PROMPT_LIBRARY['position'].get(position, '')
+            if pos_text:
+                obs_text = f"{pos_text}{obs_text}"
+        parts.append(obs_text)
+    
+    return '，'.join(parts) if parts else '请注意盲道'
+
+
+def get_urgent_prompt(urgent_type):
+    """
+    获取紧急提示词（最高优先级，立即返回）
+    Args:
+        urgent_type: 紧急类型 'danger', 'collision', 'fight'
+    Returns:
+        str: 紧急提示文本
+    """
+    return PROMPT_LIBRARY['urgent'].get(urgent_type, '注意安全')
+
 
 def get_encouragement_prompt():
     """
@@ -509,6 +593,143 @@ def get_encouragement_prompt():
     if random.random() < 0.3:
         return random.choice(PROMPT_LIBRARY['encouragement'])
     return ""
+
+
+def call_llm_for_prompt(direction, obstacles, position, user_settings):
+    """
+    调用大模型生成自然语言提示（用于复杂场景）
+    Args:
+        direction: 方向
+        obstacles: 障碍物列表
+        position: 位置信息
+        user_settings: 用户设置
+    Returns:
+        str: 大模型生成的提示文本
+    """
+    try:
+        # 构建简洁的提示
+        context = f"方向:{direction}"
+        if obstacles:
+            context += f"，障碍物:{','.join(obstacles)}"
+        if position:
+            context += f"，位置:{position}"
+        
+        prompt = f"""你是盲人导航助手，用一句简短的话（不超过15字）提示用户：
+{context}
+要求：直接说提示内容，不要解释，语气温和。"""
+        
+        response = ollama_client.chat(
+            model="qwen2.5:3b",
+            messages=[{"role": "user", "content": prompt}],
+            stream=False
+        )
+        
+        result = response.get('message', {}).get('content', '').strip()
+        # 限制长度，避免过长
+        if result and len(result) <= 30:
+            return result
+        return None
+    except Exception as e:
+        print(f"[LLM] 调用失败: {e}")
+        return None
+
+
+def async_generate_and_cache(cache_key, direction, obstacles, position, user_settings):
+    """
+    异步调用大模型并缓存结果（后台线程）
+    """
+    try:
+        result = call_llm_for_prompt(direction, obstacles, position, user_settings)
+        if result:
+            llm_cache.set(cache_key, result)
+            print(f"[LLM缓存] 已缓存: {cache_key} -> {result}")
+    except Exception as e:
+        print(f"[LLM缓存] 异步生成失败: {e}")
+
+
+def get_smart_prompt(direction, obstacles=None, position=None, urgency='normal', user_settings=None):
+    """
+    智能混合语音生成（核心函数）
+    策略：紧急→静态 | 简单→静态 | 复杂→缓存/大模型/降级静态
+    
+    Args:
+        direction: 方向 'left', 'right', 'straight', 'change'
+        obstacles: 障碍物列表，如 ['person', 'stairs']
+        position: 位置 'left', 'right', 'front'
+        urgency: 紧急程度 'urgent', 'normal', 'low'
+        user_settings: 用户设置
+    Returns:
+        str: 最终的语音提示文本
+    """
+    obstacles = obstacles or []
+    
+    # === 1. 紧急情况：立即返回静态提示 ===
+    if urgency == 'urgent' or direction in ['danger', 'stop', 'fight']:
+        return get_urgent_prompt(direction)
+    
+    # === 2. 简单场景：直接使用静态提示 ===
+    if len(obstacles) <= 1:
+        prompt = get_static_prompt(direction, obstacles[0] if obstacles else None, position)
+        return prompt
+    
+    # === 3. 复杂场景：尝试缓存 → 大模型 → 降级静态 ===
+    if USE_LLM_FOR_COMPLEX and len(obstacles) >= LLM_MIN_OBSTACLES:
+        # 构建缓存键
+        cache_key = (direction, tuple(sorted(obstacles[:3])))  # 最多取3个障碍物
+        
+        # 3.1 检查预生成缓存
+        if len(obstacles) == 1:
+            pregen_key = (direction, obstacles[0])
+            if pregen_key in PREGENERATED_PROMPTS:
+                return PREGENERATED_PROMPTS[pregen_key]
+        
+        # 3.2 检查LLM动态缓存
+        cached = llm_cache.get(cache_key)
+        if cached:
+            print(f"[LLM缓存] 命中: {cache_key}")
+            return cached
+        
+        # 3.3 尝试带超时的大模型调用
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    call_llm_for_prompt, 
+                    direction, obstacles, position, user_settings or {}
+                )
+                result = future.result(timeout=LLM_TIMEOUT)
+                if result:
+                    # 缓存结果
+                    llm_cache.set(cache_key, result)
+                    return result
+        except concurrent.futures.TimeoutError:
+            print(f"[LLM] 超时({LLM_TIMEOUT}s)，降级为静态提示")
+            # 异步继续生成并缓存，下次使用
+            threading.Thread(
+                target=async_generate_and_cache,
+                args=(cache_key, direction, obstacles, position, user_settings or {}),
+                daemon=True
+            ).start()
+        except Exception as e:
+            print(f"[LLM] 调用异常: {e}")
+    
+    # === 4. 降级：静态组合 ===
+    parts = [PROMPT_LIBRARY['direction'].get(direction, '')]
+    for obs in obstacles[:2]:  # 最多播报2个障碍物
+        obs_text = PROMPT_LIBRARY['obstacles'].get(obs, '')
+        if obs_text:
+            parts.append(obs_text)
+    
+    return '，'.join(filter(None, parts)) or '请注意周围环境'
+
+
+# 兼容旧接口
+def get_blind_road_prompt(direction):
+    """兼容旧接口：获取盲道方向提示"""
+    return get_static_prompt(direction)
+
+def get_obstacle_prompt(obstacle_type):
+    """兼容旧接口：获取障碍物提示"""
+    return PROMPT_LIBRARY['obstacles'].get(obstacle_type, PROMPT_LIBRARY['obstacles']['default'])
 
 def should_speak_now(current_time):
     """
@@ -663,12 +884,26 @@ def combiner_worker():
                 best_obstacle = max(obstacle_positions, key=lambda x: x[1])
                 if best_obstacle[1] > 0.7:
                     if should_speak_now(current_time):
-                        # 简化障碍物提示：使用通用障碍物提示
-                        obstacle_type = 'step'  # 默认提示类型
-                        if check_obstacle_change(obstacle_type):
+                        # 收集所有高置信度障碍物类型
+                        obstacle_types = ['default']  # 默认障碍物类型
+                        position = best_obstacle[0]  # 位置：左侧/右侧/前方
+                        # 将中文位置映射为英文key
+                        pos_map = {'左侧': 'left', '右侧': 'right', '前方': 'front'}
+                        pos_key = pos_map.get(position, 'front')
+                        
+                        # 检查障碍物类型变化
+                        obstacle_key = f"{obstacle_types[0]}_{pos_key}"
+                        if check_obstacle_change(obstacle_key):
                             try:
                                 user_settings = get_user_settings_for_video()
-                                speech_content = get_obstacle_prompt(obstacle_type)
+                                # 使用混合架构生成语音（多障碍物时可触发大模型）
+                                speech_content = get_smart_prompt(
+                                    direction='straight',
+                                    obstacles=obstacle_types,
+                                    position=pos_key,
+                                    urgency='normal',
+                                    user_settings=user_settings
+                                )
                                 current_speech_text = speech_content
                                 speak(speech_content, user_settings)
                                 print(f"[语音提示] 障碍物检测 - {speech_content}")
@@ -709,15 +944,21 @@ def combiner_worker():
             # 检测到fight行为且置信度高于0.6时，触发语音提示
             if fight_detected and fight_confidence > 0.6:
                 if should_speak_now(current_time):
-                    # 暴力行为提示：使用通用警告
-                    obstacle_type = 'fight'  # 使用"中断"作为紧急类型
-                    if check_obstacle_change(obstacle_type):
+                    # 暴力行为使用紧急提示（最高优先级）
+                    if check_obstacle_change('fight'):
                         try:
                             user_settings = get_user_settings_for_video()
-                            speech_content = "注意小心"
+                            # 使用紧急提示，立即返回静态文本
+                            speech_content = get_smart_prompt(
+                                direction='fight',
+                                obstacles=[],
+                                position=None,
+                                urgency='urgent',
+                                user_settings=user_settings
+                            )
                             current_speech_text = speech_content
                             speak(speech_content, user_settings)
-                            print(f"[语音提示] 暴力行为检测 - 注意小心 (置信度: {fight_confidence:.2f})")
+                            print(f"[语音提示] 暴力行为检测 - {speech_content} (置信度: {fight_confidence:.2f})")
                             last_fight_speak_time = current_time
                         except Exception as e:
                             print(f"[语音提示] 暴力行为语音播放错误: {e}")
