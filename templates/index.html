@@ -2243,7 +2243,6 @@
             -webkit-overflow-scrolling: touch;
         }
     </style>
-```
 </head>
 <body>
     <header>
@@ -2628,7 +2627,7 @@
                             </div>
                             <div class="status-item">
                                 <div class="status-label">使用模式</div>
-                                <div class="status-value">{{ settings.user_mode }}</div>
+                                <div class="status-value" id="currentUserModeText">{{ settings.user_mode }}</div>
                             </div>
                         </div>
 
@@ -3745,6 +3744,19 @@
         }
 
         // 用户模式切换
+        function updateUserModeUI(mode) {
+            const modeText = document.getElementById('currentUserModeText');
+            if (modeText) {
+                modeText.textContent = mode;
+            }
+
+            // 根据用户模式控制消息输入框的显示/隐藏
+            const messageInputArea = document.getElementById('messageInputArea');
+            if (messageInputArea) {
+                messageInputArea.style.display = (mode === '盲人端') ? 'none' : 'flex';
+            }
+        }
+
         function switchUserMode(mode) {
             document.getElementById('settingUserMode').value = mode;
 
@@ -3756,6 +3768,9 @@
                 document.getElementById('blindModeBtn').classList.remove('active');
                 document.getElementById('familyModeBtn').classList.add('active');
             }
+
+            // 同步更新主界面显示（无需等待“保存”）
+            updateUserModeUI(mode);
         }
 
         async function saveSettings() {
@@ -3783,13 +3798,8 @@
                     alert('设置已保存');
                     closeSettings();
 
-                    // 根据用户模式控制消息输入框的显示/隐藏
-                    const messageInputArea = document.getElementById('messageInputArea');
-                    if (settings.user_mode === '盲人端') {
-                        messageInputArea.style.display = 'none';
-                    } else {
-                        messageInputArea.style.display = 'flex';
-                    }
+                    // 保存成功后再次同步主界面（防止与后端状态不一致）
+                    updateUserModeUI(settings.user_mode);
                 } else {
                     alert(`保存失败: ${result.message}`);
                 }
@@ -5494,6 +5504,12 @@
                         askAiAssistant();
                     }
                 });
+            }
+
+            // 初始化：同步主界面“使用模式/消息输入框”显示
+            const modeInput = document.getElementById('settingUserMode');
+            if (modeInput && modeInput.value) {
+                updateUserModeUI(modeInput.value);
             }
         });
 

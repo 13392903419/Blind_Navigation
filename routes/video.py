@@ -206,6 +206,10 @@ SPEECH_COOLDOWN = 3.0  # 语音播报冷却时间（秒）
 last_speech_time = 0  # 最后一次语音播报的时间
 last_direction = None  # 最后一次播报的方向（用于去重）
 last_obstacle_type = None  # 最后一次播报的障碍物类型（用于去重）
+# 音画对齐基准延迟（秒），动态自适应时作为下限
+ALIGN_BASE_DELAY = 0.4
+voice_latency_avg = 0.4  # 语音生成/入队平均耗时估计（秒）
+last_speech_ready_time = 0  # 最近一次语音预计“就绪”时间，用于对齐帧
 
 # === 混合语音策略配置 ===
 USE_LLM_FOR_COMPLEX = True   # 是否对复杂场景启用大模型
@@ -785,12 +789,19 @@ def combiner_worker():
     并根据检测结果输出相应的语音提示
     """
     global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
-    global last_direction, last_obstacle_type, last_speech_time
+    global last_direction, last_obstacle_type, last_speech_time, last_speech_ready_time, voice_latency_avg
 
     # 各类型的提示间隔（秒）
     FIGHT_SPEAK_INTERVAL = 2.0
     OBSTACLE_SPEAK_INTERVAL = 2.0
     BLIND_ROAD_SPEAK_INTERVAL = 2.0
+
+    def update_voice_ready(start_ts: float):
+        """更新语音耗时估计与预计就绪时间"""
+        global voice_latency_avg, last_speech_ready_time
+        duration = time.time() - start_ts
+        voice_latency_avg = 0.7 * voice_latency_avg + 0.3 * duration
+        last_speech_ready_time = time.time() + max(ALIGN_BASE_DELAY, voice_latency_avg)
 
     while thread_control['running']:
         try:
@@ -838,7 +849,9 @@ def combiner_worker():
                             if encouragement:
                                 speech_content += "，" + encouragement
                             current_speech_text = speech_content
+                            _ts = time.time()
                             speak(speech_content, user_settings)
+                            update_voice_ready(_ts)
                             print(f"[语音提示] 盲道检测 - {speech_content}")
                         except Exception as e:
                             print(f"[语音提示] 盲道语音播放错误: {e}")
@@ -905,7 +918,9 @@ def combiner_worker():
                                     user_settings=user_settings
                                 )
                                 current_speech_text = speech_content
+                                _ts = time.time()
                                 speak(speech_content, user_settings)
+                                update_voice_ready(_ts)
                                 print(f"[语音提示] 障碍物检测 - {speech_content}")
                                 last_obstacle_speak_time = current_time
                             except Exception as e:
@@ -957,7 +972,9 @@ def combiner_worker():
                                 user_settings=user_settings
                             )
                             current_speech_text = speech_content
+                            _ts = time.time()
                             speak(speech_content, user_settings)
+                            update_voice_ready(_ts)
                             print(f"[语音提示] 暴力行为检测 - {speech_content} (置信度: {fight_confidence:.2f})")
                             last_fight_speak_time = current_time
                         except Exception as e:
@@ -965,7 +982,8 @@ def combiner_worker():
 
             # 送给显示线程
             try:
-                result_queue.put_nowait({'frame': frame})
+                ready_at = max(current_time, last_speech_ready_time)
+                result_queue.put_nowait({'frame': frame, 'ready_at': ready_at})
             except queue.Full:
                 pass
             # 清缓存
@@ -1054,6 +1072,8 @@ def start_async_processing(video_path):
         last_direction = None
         last_obstacle_type = None
         last_speech_time = 0
+        last_speech_ready_time = 0
+        voice_latency_avg = ALIGN_BASE_DELAY
         last_fight_speak_time = 0
         last_obstacle_speak_time = 0
         last_blind_road_speak_time = 0
@@ -1488,6 +1508,10 @@ def generate_frames():
 
                 # 正常帧数据
                 frame = result_data['frame']
+                ready_at = result_data.get('ready_at', 0)
+                delay = ready_at - time.time()
+                if delay > 0:
+                    time.sleep(delay)
 
                 # 更新性能监控
                 performance_metrics['frame_queue_size'] = frame_queue.qsize()
