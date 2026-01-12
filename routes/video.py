@@ -232,16 +232,24 @@ video_active = False
 last_call_time = 0
 current_speech_text = ""
 
-# === 音画同步状态 ===
+# === 音画同步状态（时间戳对齐版本） ===
 speech_sync_state = {
     'is_speaking': False,       # 是否正在播报
     'trigger_frame_id': 0,      # 触发语音的帧ID
+    'trigger_capture_ts': 0,    # 触发语音时的帧捕获时间戳（精确对齐用）
     'speech_text': '',          # 当前语音内容
-    'speech_start_time': 0,     # 语音开始时间
+    'speech_start_time': 0,     # 语音开始时间（系统时间）
     'speech_duration': 2.0,     # 预估语音持续时间（秒）
     'freeze_frame': None,       # 冻结帧（用于前端暂停时显示）
+    'expected_end_time': 0,     # 预计语音结束时间
 }
 speech_sync_lock = threading.Lock()
+
+# === 时间戳对齐配置 ===
+SYNC_BUFFER_DELAY = 0.3       # 帧缓冲延迟（秒）- 给语音准备留出时间
+SYNC_MAX_BUFFER_SIZE = 10     # 最大缓冲帧数
+SYNC_ENABLED = True           # 是否启用时间戳对齐
+
 # 注意：语音完成回调在 clear_speech_sync_state 定义之后注册（见下方）
 
 # 语音播报优化 - 混合架构（静态优先 + 大模型缓存）
@@ -507,6 +515,7 @@ def push_inference(in_q, model, tag, color):
 
         frame = item['frame']
         fid = item.get('fid', 0)
+        capture_ts = item.get('capture_ts', time.time())  # 获取捕获时间戳
 
         # 受控抽帧：只有当满足条件时才进行推理，否则复用最近结果
         do_infer = (fid % INFER_EVERY_N == 0) or (last_results.get(tag) is None)
@@ -584,7 +593,8 @@ def push_inference(in_q, model, tag, color):
                 'frame': frame,               # 原图副本
                 'tag': tag,                   # blind_road / environment / violence
                 'boxes': out_boxes,
-                'names': out_names
+                'names': out_names,
+                'capture_ts': capture_ts      # 帧捕获时间戳（音画对齐用）
             })
         except queue.Full:
             pass
@@ -619,6 +629,7 @@ def push_pose_inference(in_q):
         
         frame = item['frame']
         fid = item.get('fid', 0)
+        capture_ts = item.get('capture_ts', time.time())  # 获取捕获时间戳
         
         # 受控抽帧：每隔一帧推理一次
         do_infer = (fid % INFER_EVERY_N == 0) or (last_pose_result is None)
@@ -671,7 +682,8 @@ def push_pose_inference(in_q):
                 'fid': fid,
                 'frame': frame,
                 'tag': 'pose',
-                'pose_result': pose_result
+                'pose_result': pose_result,
+                'capture_ts': capture_ts      # 帧捕获时间戳（音画对齐用）
             })
         except queue.Full:
             pass
@@ -921,35 +933,39 @@ last_fight_speak_time = 0
 last_obstacle_speak_time = 0
 last_blind_road_speak_time = 0
 
-def set_speech_sync_state(frame_id, frame, speech_text, is_urgent=False):
+def set_speech_sync_state(frame_id, frame, speech_text, is_urgent=False, capture_ts=None):
     """
-    设置语音同步状态，用于前端音画同步
+    设置语音同步状态，用于前端音画同步（时间戳对齐版本）
     Args:
         frame_id: 触发语音的帧ID
         frame: 触发语音时的帧画面（用于冻结显示）
         speech_text: 语音内容
         is_urgent: 是否紧急播报
+        capture_ts: 帧捕获时间戳（用于精确对齐）
     """
     global speech_sync_state
-    # 根据文本长度估算语音持续时间（约每字0.3秒）
+    # 根据文本长度估算语音持续时间（约每字0.25秒）
     text_len = len(speech_text) if speech_text else 0
     duration = max(1.5, min(text_len * 0.25, 5.0))  # 1.5~5秒
     if is_urgent:
         duration = max(1.0, duration * 0.7)  # 紧急播报更快
     
+    current_time = time.time()
     with speech_sync_lock:
         speech_sync_state['is_speaking'] = True
         speech_sync_state['trigger_frame_id'] = frame_id
+        speech_sync_state['trigger_capture_ts'] = capture_ts or current_time
         speech_sync_state['speech_text'] = speech_text
-        speech_sync_state['speech_start_time'] = time.time()
+        speech_sync_state['speech_start_time'] = current_time
         speech_sync_state['speech_duration'] = duration
+        speech_sync_state['expected_end_time'] = current_time + duration
         # 保存冻结帧的JPEG编码
         if frame is not None:
             ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             if ret:
                 speech_sync_state['freeze_frame'] = buffer.tobytes()
     
-    print(f"[音画同步] 设置语音状态: frame_id={frame_id}, duration={duration:.1f}s, text='{speech_text}'")
+    print(f"[音画同步] 设置语音状态: frame_id={frame_id}, capture_ts={capture_ts:.3f}s, duration={duration:.1f}s, text='{speech_text}'")
 
 def clear_speech_sync_state():
     """清除语音同步状态（语音播放完成后调用）"""
@@ -957,7 +973,31 @@ def clear_speech_sync_state():
     with speech_sync_lock:
         speech_sync_state['is_speaking'] = False
         speech_sync_state['freeze_frame'] = None
+        speech_sync_state['expected_end_time'] = 0
     print("[音画同步] 语音播放完成，清除同步状态")
+
+
+def get_speech_sync_state():
+    """
+    获取当前语音同步状态（供前端查询）
+    Returns:
+        dict: 同步状态信息
+    """
+    with speech_sync_lock:
+        current_time = time.time()
+        remaining = max(0, speech_sync_state['expected_end_time'] - current_time)
+        return {
+            'is_speaking': speech_sync_state['is_speaking'],
+            'trigger_frame_id': speech_sync_state['trigger_frame_id'],
+            'trigger_capture_ts': speech_sync_state['trigger_capture_ts'],
+            'speech_text': speech_sync_state['speech_text'],
+            'speech_start_time': speech_sync_state['speech_start_time'],
+            'speech_duration': speech_sync_state['speech_duration'],
+            'remaining_time': remaining,
+            'expected_end_time': speech_sync_state['expected_end_time'],
+            'sync_enabled': SYNC_ENABLED,
+            'buffer_delay': SYNC_BUFFER_DELAY
+        }
 
 # 注册语音完成回调 - 语音播放完成后自动清除同步状态
 set_speech_complete_callback(clear_speech_sync_state)
@@ -1027,6 +1067,9 @@ def combiner_worker():
         if all(k in buf for k in required_models):
             frame = buf['frame']
             current_time = time.time()
+            
+            # 获取帧捕获时间戳（从任意模型结果中提取，用于音画对齐）
+            capture_ts = buf['blind_road'].get('capture_ts', current_time)
 
             # 盲道绘制
             b_res = buf['blind_road']
@@ -1085,8 +1128,8 @@ def combiner_worker():
                             if encouragement:
                                 speech_content += "，" + encouragement
                             current_speech_text = speech_content
-                            # 设置音画同步状态
-                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
+                            # 设置音画同步状态（带时间戳善对齐）
+                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
                             _ts = time.time()
                             speak(speech_content, user_settings)
                             update_voice_ready(_ts)
@@ -1201,8 +1244,8 @@ def combiner_worker():
                                     user_settings=user_settings
                                 )
                                 current_speech_text = speech_content
-                                # 设置音画同步状态
-                                set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
+                                # 设置音画同步状态（带时间戳对齐）
+                                set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
                                 _ts = time.time()
                                 speak(speech_content, user_settings)
                                 update_voice_ready(_ts)
@@ -1260,8 +1303,8 @@ def combiner_worker():
                             user_settings=user_settings
                         )
                         current_speech_text = speech_content
-                        # 设置音画同步状态（紧急模式）
-                        set_speech_sync_state(fid, frame, speech_content, is_urgent=True)
+                        # 设置音画同步状态（紧急模式，带时间戳）
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
                         # 使用紧急播报函数 - 清空队列并立即播放
                         speak_urgent(speech_content, user_settings)
                         # 更新fight专用时间戳
@@ -1310,7 +1353,7 @@ def combiner_worker():
                     speech_content = prefix + direction_prompt
                     
                     current_speech_text = speech_content
-                    set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
+                    set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
                     _ts = time.time()
                     speak(speech_content, user_settings)
                     update_voice_ready(_ts)
@@ -1384,7 +1427,7 @@ def combiner_worker():
                             is_urgent = abnormality.get('severity', 0) >= 3
                             
                             current_speech_text = pose_prompt
-                            set_speech_sync_state(fid, frame, pose_prompt, is_urgent=is_urgent)
+                            set_speech_sync_state(fid, frame, pose_prompt, is_urgent=is_urgent, capture_ts=capture_ts)
                             _ts = time.time()
                             
                             if is_urgent:
@@ -1403,10 +1446,30 @@ def combiner_worker():
             was_fight_detected = fight_detected
             was_obstacle_detected = obstacle_detected_on_path  # 只追踪盲道上的障碍物
 
-            # 送给显示线程（携带帧ID用于音画同步）
+            # 送给显示线程（携带帧ID和时间戳用于音画同步）
             try:
-                ready_at = max(current_time, last_speech_ready_time)
-                result_queue.put_nowait({'frame': frame, 'frame_id': fid, 'ready_at': ready_at})
+                # 计算帧应该显示的时间（基于时间戳对齐）
+                if SYNC_ENABLED:
+                    # 如果正在播放语音，确保帧与语音同步
+                    with speech_sync_lock:
+                        if speech_sync_state['is_speaking']:
+                            # 使用语音触发时的capture_ts作为基准
+                            speech_capture_ts = speech_sync_state['trigger_capture_ts']
+                            # 计算当前帧相对于触发帧的时间差
+                            frame_offset = capture_ts - speech_capture_ts
+                            # 帧应该在语音开始后 frame_offset 时间显示
+                            ready_at = speech_sync_state['speech_start_time'] + frame_offset + SYNC_BUFFER_DELAY
+                        else:
+                            ready_at = current_time + SYNC_BUFFER_DELAY
+                else:
+                    ready_at = max(current_time, last_speech_ready_time)
+                
+                result_queue.put_nowait({
+                    'frame': frame,
+                    'frame_id': fid,
+                    'capture_ts': capture_ts,
+                    'ready_at': ready_at
+                })
             except queue.Full:
                 pass
             # 清缓存
@@ -1636,17 +1699,21 @@ def frame_reader_worker():
             # 队列满时阻塞（背压机制：推理跟不上就等待）
             #frame_queue.put(frame_data, block=True, timeout=1.0)
             # ---------- Patch A: 广播帧到四模型队列（包括 MediaPipe） ----------
+            # 记录帧捕获时间戳（精确对齐用）
+            capture_ts = time.time()
             for q in (blind_queue, env_queue, vio_queue):
                 try:
                     q.put_nowait({'frame': frame.copy(),
-                                  'fid': frame_count})
+                                  'fid': frame_count,
+                                  'capture_ts': capture_ts})  # 添加捕获时间戳
                 except queue.Full:
                     pass
             # MediaPipe 姿态分析队列
             if MEDIAPIPE_ENABLED:
                 try:
                     pose_queue.put_nowait({'frame': frame.copy(),
-                                           'fid': frame_count})
+                                           'fid': frame_count,
+                                           'capture_ts': capture_ts})  # 添加捕获时间戳
                 except queue.Full:
                     pass
             # 始终按源 FPS 节流，避免一次性读完整段视频
@@ -2762,34 +2829,21 @@ def stream_speech_text():
 @video_bp.route('/speech_sync_status')
 def speech_sync_status():
     """
-    获取语音同步状态 - 用于前端音画同步控制
-    返回：是否正在播报、触发帧ID、预计剩余时间
+    获取语音同步状态 - 用于前端音画同步控制（时间戳对齐版本）
+    返回：是否正在播报、触发帧ID、时间戳信息、预计剩余时间
     """
-    global speech_sync_state
-    
-    with speech_sync_lock:
-        is_speaking = speech_sync_state['is_speaking']
-        trigger_frame_id = speech_sync_state['trigger_frame_id']
-        speech_text = speech_sync_state['speech_text']
-        start_time = speech_sync_state['speech_start_time']
-        duration = speech_sync_state['speech_duration']
-    
-    # 计算剩余时间
-    elapsed = time.time() - start_time if start_time > 0 else 0
-    remaining = max(0, duration - elapsed)
-    
-    # 如果已超时，自动清除状态
-    if is_speaking and remaining <= 0:
-        clear_speech_sync_state()
-        is_speaking = False
-        remaining = 0
-    
+    return jsonify(get_speech_sync_state())
+
+
+@video_bp.route('/sync_config')
+def get_sync_config():
+    """
+    获取时间戳对齐配置 - 供前端查询同步参数
+    """
     return jsonify({
-        'is_speaking': is_speaking,
-        'trigger_frame_id': trigger_frame_id,
-        'speech_text': speech_text,
-        'remaining_time': round(remaining, 2),
-        'duration': duration
+        'sync_enabled': SYNC_ENABLED,
+        'buffer_delay': SYNC_BUFFER_DELAY,
+        'max_buffer_size': SYNC_MAX_BUFFER_SIZE
     })
 
 

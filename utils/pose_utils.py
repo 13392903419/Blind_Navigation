@@ -353,13 +353,12 @@ def analyze_person_orientation(landmarks, image_width, image_height):
 
 def analyze_pose_abnormality(landmarks, image_width, image_height):
     """
-    分析姿态异常（跌倒、打架姿态、攻击性动作）
+    分析姿态异常（简化版：仅检测防御姿态）
     
     检测规则：
-    1. 跌倒检测：身体水平/头部低于腰部
-    2. 攻击姿态：手臂高举过头/挥拳动作
-    3. 防御姿态：双手护头
-    4. 倒地姿态：肩膀和臀部在同一水平面
+    - 防御姿态：双手护头
+    
+    注：为减少误报和杂乱播报，已禁用 fall/attack/fight 检测
     
     Args:
         landmarks: MediaPipe 的 pose_landmarks.landmark
@@ -369,7 +368,7 @@ def analyze_pose_abnormality(landmarks, image_width, image_height):
     Returns:
         dict: {
             'is_abnormal': bool,
-            'abnormality_type': str,  # 'fall' | 'attack' | 'defense' | 'fight' | 'normal'
+            'abnormality_type': str,  # 'defense' | 'normal'
             'confidence': float,
             'description': str,
             'severity': int (1-3)  # 严重程度
@@ -382,23 +381,15 @@ def analyze_pose_abnormality(landmarks, image_width, image_height):
     NOSE = 0
     LEFT_SHOULDER = 11
     RIGHT_SHOULDER = 12
-    LEFT_ELBOW = 13
-    RIGHT_ELBOW = 14
     LEFT_WRIST = 15
     RIGHT_WRIST = 16
     LEFT_HIP = 23
     RIGHT_HIP = 24
-    LEFT_KNEE = 25
-    RIGHT_KNEE = 26
-    LEFT_ANKLE = 27
-    RIGHT_ANKLE = 28
     
     try:
         nose = landmarks[NOSE]
         left_shoulder = landmarks[LEFT_SHOULDER]
         right_shoulder = landmarks[RIGHT_SHOULDER]
-        left_elbow = landmarks[LEFT_ELBOW]
-        right_elbow = landmarks[RIGHT_ELBOW]
         left_wrist = landmarks[LEFT_WRIST]
         right_wrist = landmarks[RIGHT_WRIST]
         left_hip = landmarks[LEFT_HIP]
@@ -419,48 +410,15 @@ def analyze_pose_abnormality(landmarks, image_width, image_height):
         description = '正常'
         severity = 0
         
-        # === 检测规则 ===
+        # === 仅检测防御姿态 ===
         
-        # 1. 跌倒检测：头部低于或接近臀部高度
-        if nose_y > hip_y - 0.1:
-            abnormality_type = 'fall'
-            description = '异常活动'
-            confidence = 0.8
-            severity = 2
-        
-        # 2. 攻击姿态：手腕高于头部（挥拳/攻击动作）
-        elif left_wrist_y < nose_y - 0.1 or right_wrist_y < nose_y - 0.1:
-            # 判断是否是挥拳动作（手腕在头部上方且肘部弯曲）
-            left_arm_raised = left_wrist_y < nose_y - 0.1 and left_wrist.visibility > 0.5
-            right_arm_raised = right_wrist_y < nose_y - 0.1 and right_wrist.visibility > 0.5
-            
-            if left_arm_raised or right_arm_raised:
-                # 检查肘部是否弯曲（攻击动作的特征）
-                if left_arm_raised:
-                    elbow_angle = abs(left_elbow.y - left_wrist_y)
-                else:
-                    elbow_angle = abs(right_elbow.y - right_wrist_y)
-                
-                if elbow_angle > 0.05:  # 肘部有弯曲
-                    abnormality_type = 'attack'
-                    description = '攻击性动作'
-                    confidence = 0.75
-                    severity = 2
-        
-        # 3. 防御姿态：双手在头部附近
-        elif (abs(left_wrist_y - nose_y) < 0.15 and abs(right_wrist_y - nose_y) < 0.15 and
+        # 防御姿态：双手在头部附近（双手护头）
+        if (abs(left_wrist_y - nose_y) < 0.15 and abs(right_wrist_y - nose_y) < 0.15 and
               abs(left_wrist.x - nose.x) < 0.2 and abs(right_wrist.x - nose.x) < 0.2):
             abnormality_type = 'defense'
             description = '防御姿态'
             confidence = 0.7
             severity = 1
-        
-        # 4. 身体倾斜过大（可能在推搡/打斗）
-        elif body_angle < 0.15:  # 身体过于水平
-            abnormality_type = 'fight'
-            description = '打斗行为'
-            confidence = 0.65
-            severity = 3
         
         return {
             'is_abnormal': abnormality_type != 'normal',
@@ -698,20 +656,14 @@ def get_pose_voice_prompt(analysis_result):
     
     prompts = []
     
-    # 异常姿态提示（优先级最高）
+    # 异常姿态提示（仅防御姿态）
     abnormality = analysis_result.get('abnormality')
     if abnormality and abnormality['is_abnormal']:
-        severity = abnormality['severity']
         abnorm_type = abnormality['abnormality_type']
         
-        if abnorm_type == 'fall':
-            prompts.append('前方有异常活动')
-        elif abnorm_type == 'attack':
-            prompts.append('注意，有人做出攻击动作')
-        elif abnorm_type == 'defense':
+        # 只播报防御姿态，其他类型不播报（减少杂乱）
+        if abnorm_type == 'defense':
             prompts.append('前方可能有冲突')
-        elif abnorm_type == 'fight':
-            prompts.append('前方有打斗')
     
     # 朝向提示（只提示面向你的情况）
     orientation = analysis_result.get('orientation')
