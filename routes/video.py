@@ -28,11 +28,42 @@ torch.serialization.add_safe_globals([
 ])
 
 from ultralytics import YOLO
+from PIL import Image, ImageDraw, ImageFont
 
 from utils.decorators import login_required
 from utils.video_utils import allowed_file, create_error_frame, create_info_frame
 from utils.voice_utils import speak, speak_urgent, get_prompt_template, set_speech_complete_callback
+from utils.pose_utils import init_mediapipe, analyze_frame as analyze_pose, draw_pose_analysis, get_pose_voice_prompt
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
+
+# ========== 中文绘制支持 ==========
+CHINESE_FONT_PATH = "C:/Windows/Fonts/msyh.ttc"  # 微软雅黑
+_chinese_font_cache = {}
+
+def get_chinese_font(size=20):
+    """获取中文字体（带缓存）"""
+    if size not in _chinese_font_cache:
+        try:
+            _chinese_font_cache[size] = ImageFont.truetype(CHINESE_FONT_PATH, size)
+        except:
+            _chinese_font_cache[size] = ImageFont.load_default()
+    return _chinese_font_cache[size]
+
+def put_chinese_text(img, text, position, color=(0, 255, 0), font_size=20):
+    """在 OpenCV 图像上绘制中文"""
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+    font = get_chinese_font(font_size)
+    rgb_color = (color[2], color[1], color[0])  # BGR -> RGB
+    draw.text(position, text, font=font, fill=rgb_color)
+    return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+# 初始化 MediaPipe（在模块加载时尝试初始化）
+MEDIAPIPE_ENABLED = init_mediapipe()
+if MEDIAPIPE_ENABLED:
+    print("[模块加载] ✓ MediaPipe 姿态分析已启用")
+else:
+    print("[模块加载] ⚠ MediaPipe 未启用（可能未安装）")
 
 # 加载YOLO模型 - 使用相对路径
 # 获取项目根目录
@@ -339,13 +370,22 @@ violence_model_stats = {
     'last_update': 0
 }
 
+# MediaPipe 姿态分析性能统计
+pose_model_stats = {
+    'fps': 0,
+    'latency': 0,
+    'confidence': 0,
+    'last_update': 0
+}
+
 # 兼容性：保留原有的model_stats
 model_stats = main_model_stats
 # 新增：tag->stats字典映射，便于异步推理线程写入
 stats_map = {
     'blind_road': blind_road_model_stats,
     'environment': environment_model_stats,
-    'violence': violence_model_stats
+    'violence': violence_model_stats,
+    'pose': pose_model_stats
 }
 
 def update_stats(tag, fps, latency_ms, confidence):
@@ -365,18 +405,20 @@ frame_queue = queue.Queue(maxsize=20)
 blind_queue = queue.Queue(maxsize=5)
 env_queue = queue.Queue(maxsize=5)
 vio_queue = queue.Queue(maxsize=5)    # 读帧线程 → 推理线程
+pose_queue = queue.Queue(maxsize=5)   # MediaPipe 姿态分析队列
 # ---------- Combiner 额外队列 ----------
 from collections import defaultdict
 
-combined_queue = queue.Queue(maxsize=30)   # 三模型结果汇聚→合成线程
-combine_buffer = defaultdict(dict)         # 临时缓存同一帧三模型结果
+combined_queue = queue.Queue(maxsize=40)   # 四模型结果汇聚→合成线程（增大缓冲）
+combine_buffer = defaultdict(dict)         # 临时缓存同一帧四模型结果
 # ---------------------------------------
 result_queue = queue.Queue(maxsize=3)   # 推理线程 → 显示线程
 
-# 三个子模块的显示队列（推理线程直接产出已绘制帧，供端点消费）
+# 四个子模块的显示队列（推理线程直接产出已绘制帧，供端点消费）
 blind_display_queue = queue.Queue(maxsize=3)
 env_display_queue   = queue.Queue(maxsize=3)
 vio_display_queue   = queue.Queue(maxsize=3)
+pose_display_queue  = queue.Queue(maxsize=3)  # MediaPipe 姿态分析显示队列
 
 # 线程控制字典
 thread_control = {
@@ -558,6 +600,88 @@ def push_inference(in_q, model, tag, color):
                 vio_display_queue.put_nowait(pkt)
         except queue.Full:
             pass
+
+
+# ============== MediaPipe 姿态分析推理线程 ==============
+
+def push_pose_inference(in_q):
+    """MediaPipe 姿态分析推理线程"""
+    fps_buf = []
+    last_pose_result = None  # 缓存上次结果用于跳帧复用
+    
+    while thread_control['running']:
+        try:
+            item = in_q.get(timeout=1.0)
+        except queue.Empty:
+            if not thread_control['reader_alive']:
+                break
+            continue
+        
+        frame = item['frame']
+        fid = item.get('fid', 0)
+        
+        # 受控抽帧：每隔一帧推理一次
+        do_infer = (fid % INFER_EVERY_N == 0) or (last_pose_result is None)
+        
+        if do_infer and MEDIAPIPE_ENABLED:
+            # 执行姿态分析
+            pose_result = analyze_pose(frame)
+            latency = pose_result.get('latency_ms', 0)
+            last_pose_result = pose_result
+        else:
+            # 复用上次结果
+            pose_result = last_pose_result if last_pose_result else {
+                'detected': False,
+                'pose_results': None,
+                'orientation': None,
+                'abnormality': None,
+                'alert_level': 0,
+                'alert_message': '',
+                'latency_ms': 0
+            }
+            latency = 0
+        
+        # 为显示队列生成已绘制帧
+        if MEDIAPIPE_ENABLED and pose_result.get('detected'):
+            annotated = draw_pose_analysis(frame.copy(), pose_result, draw_skeleton=True)
+        else:
+            annotated = frame.copy()
+            cv2.putText(annotated, "Pose: No Detection", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
+        
+        # FPS 计算
+        fps_buf.append(time.time())
+        if len(fps_buf) > 30:
+            fps_buf.pop(0)
+        fps = len(fps_buf) / (fps_buf[-1] - fps_buf[0]) if len(fps_buf) >= 2 else 0
+        
+        # 计算置信度（基于检测结果）
+        confidence = 0
+        if pose_result.get('detected'):
+            if pose_result.get('orientation'):
+                confidence = max(confidence, pose_result['orientation'].get('confidence', 0) * 100)
+            if pose_result.get('abnormality'):
+                confidence = max(confidence, pose_result['abnormality'].get('confidence', 0) * 100)
+        
+        update_stats('pose', fps, latency, confidence)
+        
+        # 将结果发送给 combiner_worker
+        try:
+            combined_queue.put_nowait({
+                'fid': fid,
+                'frame': frame,
+                'tag': 'pose',
+                'pose_result': pose_result
+            })
+        except queue.Full:
+            pass
+        
+        # 推送到姿态显示队列
+        try:
+            pose_display_queue.put_nowait({'frame': annotated})
+        except queue.Full:
+            pass
+
 
 # =============== 语音播报辅助函数 ===============
 # =============== 混合语音生成函数 ===============
@@ -840,7 +964,7 @@ set_speech_complete_callback(clear_speech_sync_state)
 
 def combiner_worker():
     """
-    收集三模型结果，同帧绘制后写入 result_queue
+    收集四模型结果（盲道+环境+暴力+姿态），同帧绘制后写入 result_queue
     并根据检测结果输出相应的语音提示
     """
     global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
@@ -851,6 +975,7 @@ def combiner_worker():
     FIGHT_SPEAK_INTERVAL = 2.0
     OBSTACLE_SPEAK_INTERVAL = 2.0
     BLIND_ROAD_SPEAK_INTERVAL = 2.0
+    POSE_SPEAK_INTERVAL = 3.0  # 姿态提示间隔（秒）
     
     # === 危险状态追踪（用于危险消失后重新提示盲道方向）===
     was_fight_detected = False      # 上一帧是否检测到打架
@@ -866,6 +991,11 @@ def combiner_worker():
     consecutive_clear_frames = 0       # 连续没有检测到盲道上障碍物的帧数
     MIN_OBSTACLE_FRAMES = 3            # 至少连续N帧检测到障碍物才播报（避免误检）
     MIN_CLEAR_FRAMES = 5               # 至少连续N帧没有障碍物才播报"已通过"（避免闪烁）
+    
+    # === MediaPipe 姿态分析状态追踪 ===
+    last_pose_speak_time = 0           # 上次姿态提示的时间
+    consecutive_pose_alert_frames = 0  # 连续检测到异常姿态的帧数
+    MIN_POSE_ALERT_FRAMES = 5          # 至少连续N帧检测到异常才播报
 
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
@@ -873,6 +1003,11 @@ def combiner_worker():
         duration = time.time() - start_ts
         voice_latency_avg = 0.7 * voice_latency_avg + 0.3 * duration
         last_speech_ready_time = time.time() + max(ALIGN_BASE_DELAY, voice_latency_avg)
+
+    # 确定需要等待的模型列表（根据 MediaPipe 是否启用）
+    required_models = ['blind_road', 'environment', 'violence']
+    if MEDIAPIPE_ENABLED:
+        required_models.append('pose')
 
     while thread_control['running']:
         try:
@@ -888,8 +1023,8 @@ def combiner_worker():
         buf.setdefault('frame', res['frame'])
         buf[res['tag']] = res
 
-        # 三模型结果到齐
-        if all(k in buf for k in ('blind_road', 'environment', 'violence')):
+        # 所有模型结果到齐
+        if all(k in buf for k in required_models):
             frame = buf['frame']
             current_time = time.time()
 
@@ -1186,6 +1321,84 @@ def combiner_worker():
                 except Exception as e:
                     print(f"[语音提示] 危险消失提示错误: {e}")
             
+            # === MediaPipe 姿态分析处理 ===
+            if MEDIAPIPE_ENABLED and 'pose' in buf:
+                pose_res = buf['pose']
+                pose_result = pose_res.get('pose_result', {})
+                
+                # 绘制姿态分析结果到主画面
+                if pose_result.get('detected'):
+                    # 绘制骨架（如果有）
+                    from utils.pose_utils import mp_drawing, mp_pose
+                    if mp_drawing and mp_pose and pose_result.get('pose_results'):
+                        mp_drawing.draw_landmarks(
+                            frame,
+                            pose_result['pose_results'].pose_landmarks,
+                            mp_pose.POSE_CONNECTIONS,
+                            landmark_drawing_spec=mp_drawing.DrawingSpec(
+                                color=(255, 0, 255), thickness=2, circle_radius=2
+                            ),
+                            connection_drawing_spec=mp_drawing.DrawingSpec(
+                                color=(255, 0, 255), thickness=1
+                            )
+                        )
+                    
+                    # 在画面上显示姿态信息（使用中文）
+                    y_offset = frame.shape[0] - 80  # 从底部往上显示
+                    
+                    # 显示朝向信息
+                    if pose_result.get('orientation'):
+                        ori = pose_result['orientation']
+                        ori_color = (0, 255, 255) if ori.get('approaching') else (0, 255, 0)
+                        approaching_text = " [正在接近]" if ori.get('approaching') else ""
+                        ori_text = f"行人: {ori.get('description', '未知')}{approaching_text}"
+                        frame = put_chinese_text(frame, ori_text, (10, y_offset), ori_color, font_size=22)
+                        y_offset += 30
+                    
+                    # 显示异常信息
+                    if pose_result.get('abnormality') and pose_result['abnormality'].get('is_abnormal'):
+                        abn = pose_result['abnormality']
+                        abn_color = (0, 0, 255) if abn.get('severity', 0) >= 2 else (0, 165, 255)
+                        abn_text = f"⚠ 姿态警告: {abn.get('description', '异常')}"
+                        frame = put_chinese_text(frame, abn_text, (10, y_offset), abn_color, font_size=22)
+                
+                # 姿态异常语音提示
+                pose_alert_level = pose_result.get('alert_level', 0)
+                
+                if pose_alert_level > 0:
+                    consecutive_pose_alert_frames += 1
+                else:
+                    consecutive_pose_alert_frames = 0
+                
+                # 只有连续多帧检测到异常才触发语音（避免误报）
+                if (consecutive_pose_alert_frames >= MIN_POSE_ALERT_FRAMES and
+                    current_time - last_pose_speak_time >= POSE_SPEAK_INTERVAL):
+                    try:
+                        # 生成姿态提示语音
+                        pose_prompt = get_pose_voice_prompt(pose_result)
+                        if pose_prompt and should_speak_now(current_time):
+                            user_settings = get_user_settings_for_video()
+                            
+                            # 判断是否需要紧急播报（跌倒或攻击）
+                            abnormality = pose_result.get('abnormality', {})
+                            is_urgent = abnormality.get('severity', 0) >= 3
+                            
+                            current_speech_text = pose_prompt
+                            set_speech_sync_state(fid, frame, pose_prompt, is_urgent=is_urgent)
+                            _ts = time.time()
+                            
+                            if is_urgent:
+                                speak_urgent(pose_prompt, user_settings)
+                                print(f"[语音提示-紧急] ⚠️ 姿态异常 - {pose_prompt}")
+                            else:
+                                speak(pose_prompt, user_settings)
+                                print(f"[语音提示] 姿态分析 - {pose_prompt}")
+                            
+                            update_voice_ready(_ts)
+                            last_pose_speak_time = current_time
+                    except Exception as e:
+                        print(f"[语音提示] 姿态语音播放错误: {e}")
+            
             # 更新上一帧的危险状态
             was_fight_detected = fight_detected
             was_obstacle_detected = obstacle_detected_on_path  # 只追踪盲道上的障碍物
@@ -1315,7 +1528,7 @@ def start_async_processing(video_path):
             name="FrameReader"
         )
 
-        # 创建并启动三模型推理线程 (Patch B)
+        # 创建并启动三模型推理线程 (Patch B) + MediaPipe 姿态分析线程
         reader_thread.start()
         global inference_thread
         inference_thread = None  # 不再使用单线程推理
@@ -1328,10 +1541,19 @@ def start_async_processing(video_path):
         threading.Thread(target=safe_thread_wrapper(
             lambda: push_inference(vio_queue, violence_model, 'violence', (0,255,255)),
             'VioWorker'), daemon=True, name='VioWorker').start()
+        
+        # MediaPipe 姿态分析线程
+        if MEDIAPIPE_ENABLED:
+            threading.Thread(target=safe_thread_wrapper(
+                lambda: push_pose_inference(pose_queue),
+                'PoseWorker'), daemon=True, name='PoseWorker').start()
+            print("[异步管道] ✓ MediaPipe 姿态分析线程已启动")
+        
         threading.Thread(target=safe_thread_wrapper(
             combiner_worker, "Combiner"), daemon=True, name="Combiner").start()
 
-        print("[异步管道] ✓ 异步处理管道已启动 (三线程)")
+        model_count = 4 if MEDIAPIPE_ENABLED else 3
+        print(f"[异步管道] ✓ 异步处理管道已启动 ({model_count}线程)")
 
 
 def stop_async_processing():
@@ -1413,11 +1635,18 @@ def frame_reader_worker():
         try:
             # 队列满时阻塞（背压机制：推理跟不上就等待）
             #frame_queue.put(frame_data, block=True, timeout=1.0)
-            # ---------- Patch A: 广播帧到三模型队列 ----------
+            # ---------- Patch A: 广播帧到四模型队列（包括 MediaPipe） ----------
             for q in (blind_queue, env_queue, vio_queue):
                 try:
                     q.put_nowait({'frame': frame.copy(),
                                   'fid': frame_count})
+                except queue.Full:
+                    pass
+            # MediaPipe 姿态分析队列
+            if MEDIAPIPE_ENABLED:
+                try:
+                    pose_queue.put_nowait({'frame': frame.copy(),
+                                           'fid': frame_count})
                 except queue.Full:
                     pass
             # 始终按源 FPS 节流，避免一次性读完整段视频
@@ -2469,6 +2698,45 @@ def video_feed_violence():
     """板块二模型三（暴力行为检测）视频流式传输端点（改为从显示队列流出）"""
     return Response(_stream_from_display_queue(vio_display_queue, "等待测试开始"),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@video_bp.route('/video_feed/pose')
+def video_feed_pose():
+    """MediaPipe 姿态分析视频流式传输端点"""
+    if not MEDIAPIPE_ENABLED:
+        return Response(_stream_from_display_queue(None, "MediaPipe 未启用"),
+                        mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(_stream_from_display_queue(pose_display_queue, "等待测试开始"),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@video_bp.route('/get_model_stats/pose')
+def get_pose_stats():
+    """获取 MediaPipe 姿态分析的性能统计"""
+    global pose_model_stats
+    
+    if not MEDIAPIPE_ENABLED:
+        return jsonify({
+            'fps': 0,
+            'latency': 0,
+            'confidence': 0,
+            'last_update': 0,
+            'enabled': False,
+            'status': 'MediaPipe 未启用'
+        })
+    
+    last_update = pose_model_stats.get('last_update', 0)
+    active = video_active and (time.time() - last_update < 3)
+    
+    return jsonify({
+        'fps': pose_model_stats.get('fps', 0),
+        'latency': pose_model_stats.get('latency', 0),
+        'confidence': pose_model_stats.get('confidence', 0),
+        'last_update': last_update,
+        'active': active,
+        'enabled': True,
+        'status': '运行中' if active else '未运行'
+    })
 
 
 @video_bp.route('/stream_speech_text')
