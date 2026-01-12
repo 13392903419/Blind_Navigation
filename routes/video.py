@@ -2549,12 +2549,27 @@ def get_models_status():
     global MAIN_BLIND_ROAD_MODEL_PATH, MAIN_ENVIRONMENT_MODEL_PATH, MAIN_VIOLENCE_MODEL_PATH
     global BLIND_ROAD_MODEL_PATH, ENVIRONMENT_MODEL_PATH, VIOLENCE_MODEL_PATH
 
+    # 说明：loaded 表示权重已加载；active 表示最近一段时间内确实在处理视频帧。
+    # 前端“运行中”应跟 active 同步，而不是跟 loaded 同步。
+    now = time.time()
+    main_loaded = main_blind_road_model_loaded and main_environment_model_loaded and main_violence_model_loaded
+    main_active = bool(video_active) and (now - main_model_stats.get('last_update', 0)) < 3
+    blind_road_active = bool(video_active) and (now - blind_road_model_stats.get('last_update', 0)) < 3
+    environment_active = bool(video_active) and (now - environment_model_stats.get('last_update', 0)) < 3
+    violence_active = bool(video_active) and (now - violence_model_stats.get('last_update', 0)) < 3
+
+    def _status(loaded: bool, active: bool) -> str:
+        if not loaded:
+            return "pending"
+        return "running" if active else "idle"
+
     return jsonify({
         "status": "success",
         "models": {
             "main": {
                 "name": "主模型（级联推理）",
-                "loaded": main_blind_road_model_loaded and main_environment_model_loaded and main_violence_model_loaded,
+                "loaded": main_loaded,
+                "active": main_active,
                 "components": {
                     "blind_road": {
                         "loaded": main_blind_road_model_loaded,
@@ -2569,25 +2584,28 @@ def get_models_status():
                         "path": MAIN_VIOLENCE_MODEL_PATH if main_violence_model_loaded else None
                     }
                 },
-                "status": "running" if (main_blind_road_model_loaded and main_environment_model_loaded and main_violence_model_loaded) else "pending"
+                "status": _status(main_loaded, main_active)
             },
             "blind_road": {
                 "name": "模型一（盲道检测）",
                 "loaded": blind_road_model_loaded,
+                "active": blind_road_active,
                 "path": BLIND_ROAD_MODEL_PATH if blind_road_model_loaded else None,
-                "status": "running" if blind_road_model_loaded else "pending"
+                "status": _status(blind_road_model_loaded, blind_road_active)
             },
             "environment": {
                 "name": "模型二（环境感知）",
                 "loaded": environment_model_loaded,
+                "active": environment_active,
                 "path": ENVIRONMENT_MODEL_PATH if environment_model_loaded else None,
-                "status": "running" if environment_model_loaded else "pending"
+                "status": _status(environment_model_loaded, environment_active)
             },
             "violence": {
                 "name": "模型三（暴力行为检测）",
                 "loaded": violence_model_loaded,
+                "active": violence_active,
                 "path": VIOLENCE_MODEL_PATH if violence_model_loaded else None,
-                "status": "running" if violence_model_loaded else "pending"
+                "status": _status(violence_model_loaded, violence_active)
             }
         }
 })

@@ -4619,9 +4619,12 @@
             const modelPath = document.getElementById('main-model-path');
 
             if (statusBadge && statusText) {
-                if (mainData.loaded && mainData.status === 'running') {
+                if (mainData.loaded && (mainData.active || mainData.status === 'running')) {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
+                } else if (mainData.loaded) {
+                    statusBadge.className = 'model-status-badge status-idle';
+                    statusText.textContent = '已加载';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4670,11 +4673,17 @@
             const modelPath = document.getElementById('blind-road-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && modelData.status === 'running') {
+                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
+                } else if (modelData.loaded) {
+                    statusBadge.className = 'model-status-badge status-idle';
+                    statusText.textContent = '已加载';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4704,11 +4713,17 @@
             const modelPath = document.getElementById('environment-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && modelData.status === 'running') {
+                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
+                } else if (modelData.loaded) {
+                    statusBadge.className = 'model-status-badge status-idle';
+                    statusText.textContent = '已加载';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4738,11 +4753,17 @@
             const modelPath = document.getElementById('violence-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && modelData.status === 'running') {
+                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
+                } else if (modelData.loaded) {
+                    statusBadge.className = 'model-status-badge status-idle';
+                    statusText.textContent = '已加载';
+                    if (placeholder) placeholder.style.display = 'flex';
+                    if (videoImg) videoImg.style.display = 'none';
+                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
