@@ -144,7 +144,7 @@ def ai_map_assistant():
         
         # 创建AI助手和地图服务实例
         ai_assistant = DeepSeekAI(DEEPSEEK_CONFIG['api_key'])
-        baidu_mcp = BaiduMapMCP(BAIDU_MAP_CONFIG['api_key'])
+        baidu_mcp = BaiduMapMCP(BAIDU_MAP_CONFIG.get('server_api_key') or BAIDU_MAP_CONFIG['api_key'])
         
         # 工具调用历史
         tool_history = []

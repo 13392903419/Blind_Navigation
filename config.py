@@ -9,15 +9,15 @@ SECRET_KEY = '13392903419'  # 请更改为随机字符串，用于session加密
 DB_CONFIG = {
     'host': 'localhost',
     'user': 'root',
-    'password': '@ACC13953201086',  # 填写您的MySQL密码
+    'password': 'Qiji199263',  # 填写您的MySQL密码
     'db': 'blind_navigation',
     'charset': 'utf8mb4',
 }
 
 # 邮件发送配置
 EMAIL_CONFIG = {
-    'sender': '2030399660@qq.com',  # 填写您的QQ邮箱
-    'password': 'umqbwgwjfheddfja',  # 填写QQ邮箱授权码（不是QQ密码）
+    'sender': '1477224133@qq.com',  # 填写您的QQ邮箱
+    'password': 'vkkmneascifwicie',  # 填写QQ邮箱授权码（不是QQ密码）
     'smtp_server': 'smtp.qq.com',
     'smtp_port': 465
 }
@@ -51,7 +51,12 @@ MODEL_WEIGHTS = 'yolo/best.pt'  # 使用项目包含的预训练YOLOv8盲道检�
 # 4. 勾选"Web服务"和"浏览器端"权限
 # 5. 保存后刷新页面测试
 BAIDU_MAP_CONFIG = {
-    'api_key': 'JdpmYDQsldEe0886JxFHqOqXFjuXtRd6',  # 填写您的百度地图API密钥
+    # 浏览器端 AK：仅用于前端加载百度 JS SDK（会暴露在页面里）
+    'api_key': 'JdpmYDQsldEe0886JxFHqOqXFjuXtRd6',
+
+    # 服务端 AK：仅用于后端 Web 服务API（地理编码/地点检索/路线规划等），不要下发到前端
+    # 如果你还没填，先临时复用上面的值也能跑，但推荐在控制台创建“服务端”应用单独一套AK
+    'server_api_key': 'IKSMbfToDqstznpDy4iKl5wRVjAO8S3d',
     'base_url': 'https://api.map.baidu.com',
     'web_service_url': 'https://api.map.baidu.com/geocoding/v3/',
     'direction_url': 'https://api.map.baidu.com/direction/v2/',

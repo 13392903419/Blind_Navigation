@@ -3393,19 +3393,12 @@
         const locationStatus = document.getElementById('locationStatus');
         const voiceStatus = document.getElementById('voiceStatus');
 
-        // 初始状态
-        function updateSystemStatus() {
-            // 检查是否有视频正在分析
-            const videoFeed = document.querySelector('.video-feed img');
-            if (videoFeed.src.includes('?t=')) {
-                videoStatus.textContent = '正在分析';
-                videoStatus.style.color = '#20c997';
-            } else {
-                videoStatus.textContent = '未开始';
-                videoStatus.style.color = '#adb5bd';
-            }
+        // 视频状态：用后端“是否活跃(active)”作为真源，避免前端用URL字符串误判
+        let backendVideoActive = false;
+        let videoStartRequestedAt = 0;
 
-            // 检查位置状态
+        // 初始状态：这里只同步位置，视频状态由 fetchModelStats() 统一驱动
+        function updateSystemStatus() {
             if (currentPosition) {
                 locationStatus.textContent = '已定位';
                 locationStatus.style.color = '#20c997';
@@ -3423,6 +3416,8 @@
             videoStatus.textContent = status;
             if (status === '正在分析') {
                 videoStatus.style.color = '#20c997';
+            } else if (status === '启动中' || status === '上传中') {
+                videoStatus.style.color = '#4dabf7';
             } else if (status === '已完成') {
                 videoStatus.style.color = '#4dabf7';
             } else if (status === '错误') {
@@ -3682,7 +3677,11 @@
                         // 刷新主视频流
                         uploadVideoImg.src = `{{ url_for('video.video_feed_main') }}?t=${Date.now()}`;
                         // 通知后端开始测试并启动性能轮询
-                        fetch('/start_test',{method:'POST'}).then(()=>startModelStatsPolling());
+                        videoStartRequestedAt = Date.now();
+                        updateVideoStatus('启动中');
+                        fetch('/start_test', { method: 'POST' })
+                            .then(() => startModelStatsPolling())
+                            .catch(() => {});
                         // 前端强制重建三路子模块流，避免重新上传后浏览器不自动重连
                         reloadAllStreams();
                     } else {
@@ -3695,8 +3694,7 @@
                         });
                     }
 
-                    // 更新视频状态
-                    updateVideoStatus('正在分析');
+                    // 这里不强行写“正在分析”，等后端 active=True 再切换，避免误同步
                 } else {
                     statusDiv.textContent = `上传失败: ${result.message}`;
                     statusDiv.style.color = '#dc3545';
@@ -4815,6 +4813,11 @@
             
             console.log('[resetVideoUpload] 重新上传流程完成，已清除所有旧数据');
 
+            // 复位系统状态
+            backendVideoActive = false;
+            videoStartRequestedAt = 0;
+            updateVideoStatus('未开始');
+
             // 6. 强制刷新所有流的连接，准备下一次上传（加时间戳防缓存）
             reloadAllStreams(Date.now());
         }
@@ -4833,6 +4836,22 @@
                 const blindRoadData = await blindRoadResponse.json();
                 const environmentData = await environmentResponse.json();
                 const violenceData = await violenceResponse.json();
+
+                // 用“是否活跃(active)”作为视频分析状态的真源
+                const anyActive = Boolean(mainData?.active || blindRoadData?.active || environmentData?.active || violenceData?.active);
+                backendVideoActive = anyActive;
+
+                if (anyActive) {
+                    updateVideoStatus('正在分析');
+                } else {
+                    // 刚触发启动的一小段时间内，显示“启动中”，避免误回退到“未开始”
+                    const withinStartupWindow = videoStartRequestedAt && (Date.now() - videoStartRequestedAt) < 10000;
+                    if (withinStartupWindow) {
+                        updateVideoStatus('启动中');
+                    } else {
+                        updateVideoStatus('未开始');
+                    }
+                }
 
                 if (mainData.status === 'success') {
                     updateModelDisplay('main', mainData);

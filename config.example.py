@@ -32,7 +32,11 @@ MODEL_WEIGHTS = 'yolo/best.pt'  # 使用项目包含的预训练YOLOv8盲道检�
 
 # 百度地图MCP配置
 BAIDU_MAP_CONFIG = {
-    'api_key': 'your_baidu_map_api_key',  # 填写您的百度地图API密钥
+    # 浏览器端 AK：用于前端加载百度 JS SDK（会暴露在页面里）
+    'api_key': 'your_baidu_map_browser_ak',
+
+    # 服务端 AK：用于后端 Web 服务API（地理编码/地点检索/路线规划等），不要下发到前端
+    'server_api_key': 'your_baidu_map_server_ak',
     'base_url': 'https://api.map.baidu.com',
     'web_service_url': 'https://api.map.baidu.com/geocoding/v3/',
     'direction_url': 'https://api.map.baidu.com/direction/v2/',

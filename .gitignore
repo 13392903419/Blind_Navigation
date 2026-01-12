@@ -182,5 +182,3 @@ create_test_user.py
 tansfer.py
 *.code-workspace
 *index - *.html
-
-config.py
