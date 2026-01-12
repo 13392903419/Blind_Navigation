@@ -1,13 +1,16 @@
 """
 主要路由 - 首页、设置、用户信息等
 """
-from flask import Blueprint, render_template, request, session, jsonify
+from flask import Blueprint, render_template, request, session, jsonify, send_from_directory
 from utils.decorators import login_required
 from utils.voice_utils import get_available_voices, speak
 from models.database import update_user_settings_in_db, get_user_details, get_user_settings
 from config import DEFAULT_USER_SETTINGS, BAIDU_MAP_CONFIG
 import threading
 import time
+import os
+from werkzeug.utils import secure_filename
+from datetime import datetime
 
 main_bp = Blueprint('main', __name__)
 
@@ -46,7 +49,7 @@ def index():
         'id': session.get('user_id'),
         'username': session.get('username', '用户')
     }
-    
+
     # 每次访问首页时，从数据库重新加载用户设置到全局变量
     # 这样可以确保视频流等非请求上下文也能使用最新的设置
     user_id = session.get('user_id')
@@ -57,7 +60,7 @@ def index():
             session['user_settings'] = user_settings_data
             update_current_user_settings(user_settings_data)
             print(f"[首页] 已从数据库加载用户设置: {user_settings_data}")
-    
+
     settings = get_current_user_settings()
     # 传递百度地图 AK 到前端模板，避免前端硬编码导致不一致
     baidu_ak = BAIDU_MAP_CONFIG.get('api_key')
@@ -74,7 +77,7 @@ def update_settings():
 
     # 获取当前设置
     current_settings = get_current_user_settings()
-    
+
     # 更新设置
     for key in current_settings.keys():
         if key in data:
@@ -185,7 +188,7 @@ def voice_test():
 def send_message():
     """接收来自前端的家属消息，添加前缀后调用语音播报"""
     current_settings = get_current_user_settings()
-    
+
     # 检查是否为盲人端模式，如果是则拒绝发送消息
     if current_settings["user_mode"] == "盲人端":
         return jsonify({"status": "error", "message": "盲人端模式不能发送消息"}), 403
@@ -218,7 +221,7 @@ def get_user_info():
     """获取当前用户的详细信息"""
     user_id = session.get('user_id')
     user_info, message = get_user_details(user_id)
-    
+
     if user_info:
         return jsonify({
             "status": "success",
@@ -226,4 +229,105 @@ def get_user_info():
         })
     else:
         return jsonify({"status": "error", "message": message}), 500
+
+
+@main_bp.route('/upload_background', methods=['POST'])
+@login_required
+def upload_background():
+    """上传背景图片"""
+    if 'background' not in request.files:
+        return jsonify({"status": "error", "message": "未找到文件"}), 400
+
+    file = request.files['background']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "未选择文件"}), 400
+
+    # 验证文件类型
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+        return jsonify({"status": "error", "message": "不支持的文件格式，请上传图片文件"}), 400
+
+    try:
+        # 确保背景图目录存在
+        background_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'backgrounds')
+        os.makedirs(background_dir, exist_ok=True)
+
+        # 生成安全的文件名
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(file.filename)
+        name, ext = os.path.splitext(filename)
+        new_filename = f"{timestamp}_{name}{ext}"
+        file_path = os.path.join(background_dir, new_filename)
+
+        # 保存文件
+        file.save(file_path)
+
+        # 返回文件URL
+        file_url = f"/static/backgrounds/{new_filename}"
+
+        return jsonify({
+            "status": "success",
+            "message": "背景图上传成功",
+            "url": file_url
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"上传失败: {str(e)}"}), 500
+
+
+@main_bp.route('/static/backgrounds/<filename>')
+def serve_background(filename):
+    """提供背景图片文件"""
+    background_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'backgrounds')
+    return send_from_directory(background_dir, filename)
+
+
+@main_bp.route('/upload_logo', methods=['POST'])
+@login_required
+def upload_logo():
+    """上传Logo图片"""
+    if 'logo' not in request.files:
+        return jsonify({"status": "error", "message": "未找到文件"}), 400
+    
+    file = request.files['logo']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "未选择文件"}), 400
+    
+    # 验证文件类型
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
+    if '.' not in file.filename or file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
+        return jsonify({"status": "error", "message": "不支持的文件格式，请上传图片文件"}), 400
+    
+    try:
+        # 确保logos目录存在
+        logos_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'logos')
+        os.makedirs(logos_dir, exist_ok=True)
+        
+        # 生成安全的文件名（固定为logo.png，覆盖旧文件）
+        filename = 'logo.png'
+        # 如果是SVG，保持SVG格式
+        if file.filename.rsplit('.', 1)[1].lower() == 'svg':
+            filename = 'logo.svg'
+        
+        file_path = os.path.join(logos_dir, filename)
+        
+        # 保存文件
+        file.save(file_path)
+        
+        # 返回文件URL
+        file_url = f"/static/logos/{filename}"
+        
+        return jsonify({
+            "status": "success",
+            "message": "Logo上传成功",
+            "url": file_url
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"上传失败: {str(e)}"}), 500
+
+
+@main_bp.route('/static/logos/<filename>')
+def serve_logo(filename):
+    """提供Logo图片文件"""
+    logos_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'logos')
+    return send_from_directory(logos_dir, filename)
 

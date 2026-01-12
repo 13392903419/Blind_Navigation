@@ -98,6 +98,11 @@
         body {
             font-family: 'Noto Sans SC', sans-serif;
             background-color: var(--bg-color);
+            background-image: var(--bg-image, none);
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
             color: var(--text-color);
             padding: 0;
             margin: 0;
@@ -105,27 +110,113 @@
             display: flex;
             flex-direction: column;
             line-height: 1.6;
+            position: relative;
+        }
+
+        /* 背景图遮罩层，确保文字可读性 */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(248, 249, 250, 0.3);
+            z-index: -1;
+            pointer-events: none;
         }
 
         header {
             background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            background-color: rgba(77, 171, 247, 0.9);
+            backdrop-filter: blur(10px);
             color: white;
             text-align: center;
             padding: 2rem 0;
             margin-bottom: 1.5rem;
             box-shadow: var(--box-shadow);
             position: relative;
+            z-index: 10;
+            transition: background 0.5s ease, color 0.5s ease;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .header-logo {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            background-color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            padding: 8px;
+        }
+
+        .header-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+
+        .header-title-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 0.75rem;
+                padding: 0 1rem;
+            }
+
+            .header-logo {
+                width: 50px;
+                height: 50px;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+                text-align: center;
+            }
+
+            .header-title-group {
+                align-items: center;
+                text-align: center;
+            }
+
+            .subtitle {
+                font-size: 0.95rem;
+                text-align: center;
+            }
         }
 
         h1 {
             font-size: 2.2rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
+            line-height: 1.2;
         }
 
         .subtitle {
             font-size: 1.1rem;
             opacity: 0.9;
+            line-height: 1.4;
         }
 
         .container {
@@ -134,14 +225,14 @@
             margin: 0 auto;
             padding-bottom: 2rem;
         }
-        
+
         /* 新增布局系统 */
         .content-grid {
             display: flex;
             flex-direction: column;
             gap: 1.5rem;
         }
-        
+
         /* 三视频卡片行布局 */
         .video-row {
             display: grid;
@@ -155,7 +246,7 @@
             flex-direction: column;
             min-height: 520px;
         }
-        
+
         /* 功能行布局（地图、上传、AI助手） */
         .function-row {
             display: grid;
@@ -163,7 +254,7 @@
             gap: 1.5rem;
             width: 100%;
         }
-        
+
         .sub-video-row {
             display: flex;
             gap: 1.5rem;
@@ -194,21 +285,21 @@
             transform: translateY(-4px);
             box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
         }
-        
+
         .card-title {
             display: flex;
             align-items: center;
             font-size: 1.25rem;
             font-weight: 600;
-            color: var(--primary-dark);
+            color: #e91e63;
             margin-bottom: 1.25rem;
             padding-bottom: 0.75rem;
             border-bottom: 2px solid #eee;
         }
-        
+
         .card-title i {
             margin-right: 0.5rem;
-            color: var(--primary-color);
+            color: #f06595;
         }
 
         .upload-form {
@@ -325,7 +416,7 @@
             margin: 0 auto;
             background-color: transparent !important;
         }
-        
+
         .video-feed img,
         .video-feed video {
             position: relative;
@@ -2076,168 +2167,168 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
+
         /* ====== 移动端响应式样式 ====== */
-        
+
         /* 平板竖屏及以下 (≤768px) */
         @media (max-width: 768px) {
             /* 头部适配 */
             header {
                 padding: 1.5rem 0;
             }
-            
+
             h1 {
                 font-size: 1.8rem;
             }
-            
+
             .subtitle {
                 font-size: 1rem;
             }
-            
+
             /* 容器适配 */
             .container {
                 width: 100%;
                 padding: 0 1rem 2rem;
             }
-            
+
             /* 三视频卡片改为单列 */
             .video-row {
                 grid-template-columns: 1fr;
                 gap: 1rem;
             }
-            
+
             /* 功能行改为单列 */
             .function-row {
                 grid-template-columns: 1fr;
                 gap: 1rem;
             }
-            
+
             /* 卡片适配 */
             .card {
                 padding: 1rem;
                 min-height: auto !important;
             }
-            
+
             /* 视频容器高度自适应 */
             .video-container {
                 min-height: 200px;
             }
-            
+
             /* 按钮适配 */
             .btn, button, input[type="file"] + label {
                 padding: 0.8rem 1.2rem;
                 font-size: 1rem;
                 min-height: 44px; /* iOS触摸最小尺寸 */
             }
-            
+
             /* 文件上传按钮 */
             .file-upload-wrapper {
                 margin: 1rem 0;
             }
-            
+
             /* Meta信息网格改为单列 */
             .meta-info {
                 grid-template-columns: 1fr;
                 gap: 0.5rem;
             }
-            
+
             /* 地图容器 */
             #map {
                 height: 300px;
             }
-            
+
             /* 语音文本框 */
             .speech-text {
                 font-size: 1rem;
                 padding: 1rem;
                 max-height: 150px;
             }
-            
+
             /* AI助手消息 */
             .message {
                 padding: 0.8rem;
                 font-size: 0.95rem;
             }
-            
+
             /* 输入框和按钮组 */
             .input-group {
                 flex-direction: column;
                 gap: 0.5rem;
             }
-            
+
             .input-group input {
                 min-height: 44px;
             }
-            
+
             .input-group button {
                 width: 100%;
             }
         }
-        
+
         /* 手机横屏 (≤667px 横屏) */
         @media (max-width: 667px) and (orientation: landscape) {
             header {
                 padding: 1rem 0;
             }
-            
+
             h1 {
                 font-size: 1.5rem;
             }
-            
+
             .subtitle {
                 display: none; /* 横屏隐藏副标题节省空间 */
             }
-            
+
             .video-container {
                 min-height: 150px;
             }
         }
-        
+
         /* 小屏手机 (≤480px) */
         @media (max-width: 480px) {
             h1 {
                 font-size: 1.5rem;
             }
-            
+
             .subtitle {
                 font-size: 0.9rem;
             }
-            
+
             .container {
                 padding: 0 0.75rem 1.5rem;
             }
-            
+
             .card {
                 padding: 0.75rem;
                 border-radius: 8px;
             }
-            
+
             .btn {
                 font-size: 0.9rem;
                 padding: 0.7rem 1rem;
             }
-            
+
             /* 视频元数据字体缩小 */
             .meta-item-value {
                 font-size: 1.2rem;
             }
-            
+
             .meta-item-label {
                 font-size: 0.75rem;
             }
         }
-        
+
         /* 触摸优化：防止双击缩放 */
         button, .btn, a {
             touch-action: manipulation;
         }
-        
+
         /* 触摸反馈 */
         button:active, .btn:active {
             transform: scale(0.98);
             opacity: 0.9;
         }
-        
+
         /* 移动端滚动优化 */
         .chat-messages, .speech-text {
             -webkit-overflow-scrolling: touch;
@@ -2246,8 +2337,15 @@
 </head>
 <body>
     <header>
-        <h1>智能盲道识别与反馈系统·展示平台</h1>
-        <div class="subtitle">视障人士的贴心导航伙伴</div>
+        <div class="header-content">
+            <div class="header-logo" id="headerLogo">
+                <img src="/static/logos/logo.png" alt="慧行Logo" id="logoImage" onerror="this.onerror=null; this.src='/static/logos/logo.svg'; this.onerror=function(){this.style.display='none'; document.getElementById('headerLogo').innerHTML='<i class=&quot;fas fa-eye&quot; style=&quot;font-size: 2rem; color: #4dabf7;&quot;></i>';};">
+            </div>
+            <div class="header-title-group">
+                <h1>"慧行"智能盲人导航系统</h1>
+                <div class="subtitle">智慧引导行走，慧眼识别前路</div>
+            </div>
+        </div>
         <button class="settings-btn" onclick="openSettings()">
             <i class="fas fa-cog"></i>
         </button>
@@ -2444,7 +2542,7 @@
                                         </button>
                                         <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #666; text-align: center;" id="cameraStatus"></div>
                                     </div>
- 
+
                                     <div class="file-name" id="fileName" style="font-size: 0.85rem;">未选择文件</div>
                                     <button type="button" id="uploadBtn" class="upload-btn" style="padding: 0.6rem 1.2rem; font-size: 0.9rem; margin-top: 0.75rem;" onclick="uploadVideo()" disabled><i class="fas fa-upload"></i> 开始分析</button>
                                 </form>
@@ -2460,16 +2558,16 @@
                                 </button>
                             </div>
 
-                            
+
                             <!-- 隐藏的video元素用于摄像头预览 -->
                             <video id="cameraPreview" style="display: none; width: 100%; max-height: 300px; border-radius: 8px; margin-top: 1rem;" autoplay playsinline></video>
                             <canvas id="captureCanvas" style="display: none;"></canvas>
- 
+
                         </div>
 
                         <!-- 语音提示区 -->
                         <div>
-                            <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--primary-dark);">
+                            <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: #e91e63;">
                                 <i class="fas fa-volume-up"></i> 语音导航提示
                             </h3>
                             <div class="speech-text" id="speechText" style="min-height: 80px; margin-bottom: 1rem;">
@@ -2664,6 +2762,9 @@
                 <div class="tab" onclick="switchTab('voiceTab')">
                     <i class="fas fa-volume-up tab-icon"></i>语音设置
                 </div>
+                <div class="tab" onclick="switchTab('uiTab')">
+                    <i class="fas fa-palette tab-icon"></i>界面设置
+                </div>
             </div>
 
             <form id="settingsForm">
@@ -2765,6 +2866,44 @@
                     <div style="margin-top: 1rem;">
                         <button type="button" class="upload-btn" style="width: 100%; margin: 0 0 1rem 0;" onclick="testVoice()">
                             <i class="fas fa-play"></i> 测试当前语音设置
+                        </button>
+                    </div>
+
+                    <button type="button" class="settings-save" onclick="saveSettings()">
+                        <i class="fas fa-save"></i> 保存全部设置
+                    </button>
+                </div>
+
+                <!-- 界面设置标签页 -->
+                <div id="uiTab" class="tab-content">
+                    <div class="section-title">界面背景设置</div>
+                    <p style="margin-bottom: 1rem; color: #6c757d;">上传自定义背景图片，让界面更个性化。功能框将悬浮在背景图上。</p>
+                    
+                    <div class="form-group">
+                        <label>当前背景</label>
+                        <div id="currentBackgroundPreview" style="width: 100%; height: 150px; border: 2px dashed #ddd; border-radius: 8px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; margin-bottom: 1rem; overflow: hidden;">
+                            <div id="bgPreviewContent" style="text-align: center; color: #6c757d;">
+                                <i class="fas fa-image" style="font-size: 2rem; margin-bottom: 0.5rem; display: block;"></i>
+                                <span>暂无背景图</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="backgroundImageInput">上传背景图片</label>
+                        <input type="file" id="backgroundImageInput" accept="image/*" style="display: none;" onchange="handleBackgroundImageUpload(event)">
+                        <button type="button" class="upload-btn" style="width: 100%; margin-bottom: 0.5rem;" onclick="document.getElementById('backgroundImageInput').click()">
+                            <i class="fas fa-upload"></i> 选择背景图片
+                        </button>
+                        <small style="display: block; color: #6c757d; margin-top: 0.5rem;">支持 JPG、PNG、GIF 格式，建议尺寸 1920x1080 或更大</small>
+                    </div>
+
+                    <div class="form-group" id="backgroundControlGroup" style="display: none;">
+                        <button type="button" class="btn" style="width: 100%; margin-bottom: 0.5rem; background-color: #28a745;" onclick="applyBackgroundImage()">
+                            <i class="fas fa-check"></i> 应用背景
+                        </button>
+                        <button type="button" class="btn" style="width: 100%; background-color: #dc3545;" onclick="removeBackgroundImage()">
+                            <i class="fas fa-times"></i> 移除背景
                         </button>
                     </div>
 
@@ -3393,12 +3532,19 @@
         const locationStatus = document.getElementById('locationStatus');
         const voiceStatus = document.getElementById('voiceStatus');
 
-        // 视频状态：用后端“是否活跃(active)”作为真源，避免前端用URL字符串误判
-        let backendVideoActive = false;
-        let videoStartRequestedAt = 0;
-
-        // 初始状态：这里只同步位置，视频状态由 fetchModelStats() 统一驱动
+        // 初始状态
         function updateSystemStatus() {
+            // 检查是否有视频正在分析
+            const videoFeed = document.querySelector('.video-feed img');
+            if (videoFeed.src.includes('?t=')) {
+                videoStatus.textContent = '正在分析';
+                videoStatus.style.color = '#20c997';
+            } else {
+                videoStatus.textContent = '未开始';
+                videoStatus.style.color = '#adb5bd';
+            }
+
+            // 检查位置状态
             if (currentPosition) {
                 locationStatus.textContent = '已定位';
                 locationStatus.style.color = '#20c997';
@@ -3416,10 +3562,8 @@
             videoStatus.textContent = status;
             if (status === '正在分析') {
                 videoStatus.style.color = '#20c997';
-            } else if (status === '启动中' || status === '上传中') {
-                videoStatus.style.color = '#4dabf7';
             } else if (status === '已完成') {
-                videoStatus.style.color = '#4dabf7';
+                videoStatus.style.color = '#f06595';
             } else if (status === '错误') {
                 videoStatus.style.color = '#fa5252';
             } else {
@@ -3432,7 +3576,7 @@
             if (status === '已定位') {
                 locationStatus.style.color = '#20c997';
             } else if (status === '定位中') {
-                locationStatus.style.color = '#4dabf7';
+                locationStatus.style.color = '#f06595';
             } else if (status === '定位失败') {
                 locationStatus.style.color = '#fa5252';
             } else {
@@ -3445,7 +3589,7 @@
             if (status === '播放中') {
                 voiceStatus.style.color = '#20c997';
             } else if (status === '就绪') {
-                voiceStatus.style.color = '#4dabf7';
+                voiceStatus.style.color = '#f06595';
             } else if (status === '错误') {
                 voiceStatus.style.color = '#fa5252';
             } else {
@@ -3677,11 +3821,7 @@
                         // 刷新主视频流
                         uploadVideoImg.src = `{{ url_for('video.video_feed_main') }}?t=${Date.now()}`;
                         // 通知后端开始测试并启动性能轮询
-                        videoStartRequestedAt = Date.now();
-                        updateVideoStatus('启动中');
-                        fetch('/start_test', { method: 'POST' })
-                            .then(() => startModelStatsPolling())
-                            .catch(() => {});
+                        fetch('/start_test',{method:'POST'}).then(()=>startModelStatsPolling());
                         // 前端强制重建三路子模块流，避免重新上传后浏览器不自动重连
                         reloadAllStreams();
                     } else {
@@ -3694,7 +3834,8 @@
                         });
                     }
 
-                    // 这里不强行写“正在分析”，等后端 active=True 再切换，避免误同步
+                    // 更新视频状态
+                    updateVideoStatus('正在分析');
                 } else {
                     statusDiv.textContent = `上传失败: ${result.message}`;
                     statusDiv.style.color = '#dc3545';
@@ -3804,6 +3945,399 @@
             } catch (error) {
                 console.error('保存设置出错:', error);
                 alert('保存设置失败，请重试');
+            }
+        }
+
+        // 背景图处理函数
+        let currentBackgroundFile = null;
+
+        // 分析图片主要颜色
+        function analyzeImageColors(imageUrl, callback) {
+            console.log('[颜色分析] 开始加载图片:', imageUrl);
+            const img = new Image();
+            // 如果是同源图片，不需要设置crossOrigin
+            if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+                if (!imageUrl.startsWith(window.location.origin)) {
+                    img.crossOrigin = 'anonymous';
+                }
+            }
+
+            img.onload = function() {
+                console.log('[颜色分析] 图片加载成功，开始分析');
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // 设置canvas尺寸（采样分析，不需要全尺寸）
+                    const sampleSize = 300; // 增加采样尺寸以提高准确性
+                    canvas.width = sampleSize;
+                    canvas.height = sampleSize;
+
+                    // 绘制图片到canvas
+                    ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
+
+                    // 获取图片数据
+                    const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
+                    const data = imageData.data;
+
+                    // 分析颜色（提取主要颜色和平均颜色）
+                    const colorMap = {};
+                    let totalR = 0, totalG = 0, totalB = 0;
+                    let pixelCount = 0;
+                    const step = 3; // 减小采样步长，提高准确性
+
+                    for (let i = 0; i < data.length; i += step * 4) {
+                        const r = data[i];
+                        const g = data[i + 1];
+                        const b = data[i + 2];
+                        const a = data[i + 3];
+
+                        // 跳过透明像素
+                        if (a < 128) continue;
+
+                        pixelCount++;
+                        totalR += r;
+                        totalG += g;
+                        totalB += b;
+
+                        // 量化颜色（减少颜色数量，提高主要颜色识别准确性）
+                        // 对于渐变图片，使用更细的量化级别
+                        const quantizedR = Math.floor(r / 16) * 16;
+                        const quantizedG = Math.floor(g / 16) * 16;
+                        const quantizedB = Math.floor(b / 16) * 16;
+
+                        const colorKey = `${quantizedR},${quantizedG},${quantizedB}`;
+                        colorMap[colorKey] = (colorMap[colorKey] || 0) + 1;
+                    }
+
+                    console.log('[颜色分析] 分析了', pixelCount, '个像素点');
+
+                    // 找出出现频率最高的颜色（主要颜色）
+                    let maxCount = 0;
+                    let dominantColor = null;
+
+                    for (const [colorKey, count] of Object.entries(colorMap)) {
+                        if (count > maxCount) {
+                            maxCount = count;
+                            const [r, g, b] = colorKey.split(',').map(Number);
+                            dominantColor = { r, g, b };
+                        }
+                    }
+
+                    // 如果找不到主要颜色，使用平均颜色
+                    if (!dominantColor && pixelCount > 0) {
+                        dominantColor = {
+                            r: Math.round(totalR / pixelCount),
+                            g: Math.round(totalG / pixelCount),
+                            b: Math.round(totalB / pixelCount)
+                        };
+                        console.log('[颜色分析] 使用平均颜色:', dominantColor);
+                    } else if (dominantColor) {
+                        console.log('[颜色分析] 找到主要颜色:', dominantColor, '出现次数:', maxCount);
+                    }
+
+                    // 如果仍然没有颜色，使用默认颜色
+                    if (!dominantColor) {
+                        console.warn('[颜色分析] 未找到颜色，使用默认颜色');
+                        dominantColor = { r: 77, g: 171, b: 247 };
+                    }
+
+                    callback(dominantColor);
+                } catch (error) {
+                    console.error('[颜色分析] 分析图片颜色出错:', error);
+                    // 使用默认颜色
+                    callback({ r: 77, g: 171, b: 247 });
+                }
+            };
+
+            img.onerror = function() {
+                console.error('[颜色分析] 图片加载失败:', imageUrl);
+                // 如果图片加载失败，使用默认颜色
+                callback({ r: 77, g: 171, b: 247 });
+            };
+
+            img.src = imageUrl;
+        }
+
+        // 根据主要颜色计算header背景色
+        function calculateHeaderColor(dominantColor) {
+            // 计算亮度
+            const luminance = (0.299 * dominantColor.r + 0.587 * dominantColor.g + 0.114 * dominantColor.b) / 255;
+
+            let headerR, headerG, headerB;
+
+            // 根据背景亮度调整header颜色
+            if (luminance < 0.4) {
+                // 背景很暗，使用较亮的颜色，保持色调
+                const brightnessBoost = 80;
+                headerR = Math.min(255, dominantColor.r + brightnessBoost);
+                headerG = Math.min(255, dominantColor.g + brightnessBoost);
+                headerB = Math.min(255, dominantColor.b + brightnessBoost);
+            } else if (luminance < 0.6) {
+                // 背景中等亮度，适度调整
+                const brightnessBoost = 50;
+                headerR = Math.min(255, dominantColor.r + brightnessBoost);
+                headerG = Math.min(255, dominantColor.g + brightnessBoost);
+                headerB = Math.min(255, dominantColor.b + brightnessBoost);
+            } else {
+                // 背景较亮，使用较暗但保持色调的颜色
+                const darknessBoost = 50;
+                headerR = Math.max(0, dominantColor.r - darknessBoost);
+                headerG = Math.max(0, dominantColor.g - darknessBoost);
+                headerB = Math.max(0, dominantColor.b - darknessBoost);
+            }
+
+            // 调整饱和度，使颜色更柔和和谐（保持70%的饱和度）
+            const saturation = 0.7;
+            const gray = (headerR + headerG + headerB) / 3;
+            headerR = Math.round(gray + (headerR - gray) * saturation);
+            headerG = Math.round(gray + (headerG - gray) * saturation);
+            headerB = Math.round(gray + (headerB - gray) * saturation);
+
+            // 确保颜色不会太暗或太亮（保持在合理范围内）
+            const minBrightness = 100;
+            const maxBrightness = 220;
+            const currentBrightness = (headerR + headerG + headerB) / 3;
+
+            if (currentBrightness < minBrightness) {
+                const factor = minBrightness / currentBrightness;
+                headerR = Math.min(255, Math.round(headerR * factor));
+                headerG = Math.min(255, Math.round(headerG * factor));
+                headerB = Math.min(255, Math.round(headerB * factor));
+            } else if (currentBrightness > maxBrightness) {
+                const factor = maxBrightness / currentBrightness;
+                headerR = Math.round(headerR * factor);
+                headerG = Math.round(headerG * factor);
+                headerB = Math.round(headerB * factor);
+            }
+
+            return {
+                r: Math.round(headerR),
+                g: Math.round(headerG),
+                b: Math.round(headerB)
+            };
+        }
+
+        // 根据背景色确定文字颜色（确保对比度）
+        function getTextColor(headerColor) {
+            const luminance = (0.299 * headerColor.r + 0.587 * headerColor.g + 0.114 * headerColor.b) / 255;
+            // 如果背景较亮，使用深色文字；如果背景较暗，使用浅色文字
+            return luminance > 0.5 ? '#343a40' : '#ffffff';
+        }
+
+        // 更新header样式
+        function updateHeaderColor(headerColor, textColor) {
+            const header = document.querySelector('header');
+            if (header) {
+                console.log('[颜色更新] 更新header颜色:', headerColor, '文字颜色:', textColor);
+                // 创建渐变效果（从主色到稍深的颜色）
+                const darkerR = Math.max(0, headerColor.r - 30);
+                const darkerG = Math.max(0, headerColor.g - 30);
+                const darkerB = Math.max(0, headerColor.b - 30);
+
+                const gradient = `linear-gradient(135deg,
+                    rgba(${headerColor.r}, ${headerColor.g}, ${headerColor.b}, 0.9),
+                    rgba(${darkerR}, ${darkerG}, ${darkerB}, 0.9))`;
+
+                // 使用!important确保样式优先级
+                header.style.setProperty('background', gradient, 'important');
+                header.style.setProperty('background-color', `rgba(${headerColor.r}, ${headerColor.g}, ${headerColor.b}, 0.9)`, 'important');
+                header.style.setProperty('color', textColor, 'important');
+
+                console.log('[颜色更新] Header样式已应用:', gradient);
+
+                // 保存到localStorage
+                localStorage.setItem('headerColor', JSON.stringify(headerColor));
+                localStorage.setItem('headerTextColor', textColor);
+            } else {
+                console.error('[颜色更新] 未找到header元素');
+            }
+        }
+
+        // 恢复header默认颜色
+        function resetHeaderColor() {
+            const header = document.querySelector('header');
+            if (header) {
+                header.style.background = 'linear-gradient(135deg, var(--primary-color), var(--primary-dark))';
+                header.style.backgroundColor = 'rgba(77, 171, 247, 0.9)';
+                header.style.color = 'white';
+                localStorage.removeItem('headerColor');
+                localStorage.removeItem('headerTextColor');
+            }
+        }
+
+        // Logo处理函数
+        // 初始化Logo（从固定文件夹加载，仅系统管理员可更改）
+        function initLogo() {
+            const logoContainer = document.getElementById('headerLogo');
+            const logoImg = document.getElementById('logoImage');
+            
+            if (logoImg) {
+                // 先尝试加载PNG，失败则尝试SVG，都失败则显示默认图标
+                logoImg.onerror = function() {
+                    if (this.src.includes('logo.png')) {
+                        // PNG加载失败，尝试SVG
+                        this.src = '/static/logos/logo.svg';
+                    } else {
+                        // SVG也失败，显示默认图标
+                        if (logoContainer && !logoContainer.querySelector('i')) {
+                            logoContainer.innerHTML = '<i class="fas fa-eye" style="font-size: 2rem; color: #4dabf7;"></i>';
+                        }
+                    }
+                };
+            }
+        }
+
+        function handleBackgroundImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 验证文件类型
+            if (!file.type.startsWith('image/')) {
+                alert('请选择图片文件！');
+                return;
+            }
+
+            // 验证文件大小（限制为10MB）
+            if (file.size > 10 * 1024 * 1024) {
+                alert('图片文件大小不能超过10MB！');
+                return;
+            }
+
+            currentBackgroundFile = file;
+
+            // 预览图片并分析颜色
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const preview = document.getElementById('currentBackgroundPreview');
+                const previewContent = document.getElementById('bgPreviewContent');
+                previewContent.innerHTML = `<img src="${e.target.result}" style="max-width: 100%; max-height: 100%; object-fit: cover;">`;
+                document.getElementById('backgroundControlGroup').style.display = 'block';
+
+                // 分析图片颜色并预览header颜色
+                analyzeImageColors(e.target.result, function(dominantColor) {
+                    const headerColor = calculateHeaderColor(dominantColor);
+                    const textColor = getTextColor(headerColor);
+                    updateHeaderColor(headerColor, textColor);
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function applyBackgroundImage() {
+            if (!currentBackgroundFile) {
+                alert('请先选择背景图片！');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('background', currentBackgroundFile);
+
+            try {
+                const response = await fetch('/upload_background', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                if (result.status === 'success') {
+                    // 应用背景图
+                    const bgUrl = result.url;
+                    document.documentElement.style.setProperty('--bg-image', `url(${bgUrl})`);
+                    localStorage.setItem('backgroundImage', bgUrl);
+
+                    // 等待背景图加载后再分析颜色
+                    const bgImg = new Image();
+                    bgImg.onload = function() {
+                        console.log('[颜色分析] 开始分析背景图颜色:', bgUrl);
+                        // 分析背景图颜色并更新header
+                        analyzeImageColors(bgUrl, function(dominantColor) {
+                            console.log('[颜色分析] 检测到主要颜色:', dominantColor);
+                            const headerColor = calculateHeaderColor(dominantColor);
+                            console.log('[颜色分析] 计算出的header颜色:', headerColor);
+                            const textColor = getTextColor(headerColor);
+                            console.log('[颜色分析] 文字颜色:', textColor);
+                            updateHeaderColor(headerColor, textColor);
+                            console.log('[颜色分析] Header颜色已更新');
+                        });
+                    };
+                    bgImg.onerror = function() {
+                        console.error('[颜色分析] 背景图加载失败，使用预览时的颜色分析');
+                        // 如果服务器图片加载失败，使用本地预览的图片进行分析
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            analyzeImageColors(e.target.result, function(dominantColor) {
+                                const headerColor = calculateHeaderColor(dominantColor);
+                                const textColor = getTextColor(headerColor);
+                                updateHeaderColor(headerColor, textColor);
+                            });
+                        };
+                        reader.readAsDataURL(currentBackgroundFile);
+                    };
+                    bgImg.src = bgUrl;
+
+                    alert('背景图已应用！');
+                    document.getElementById('backgroundControlGroup').style.display = 'none';
+                    currentBackgroundFile = null;
+                } else {
+                    alert(`上传失败: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('上传背景图出错:', error);
+                alert('上传背景图失败，请重试');
+            }
+        }
+
+        function removeBackgroundImage() {
+            document.documentElement.style.setProperty('--bg-image', 'none');
+            localStorage.removeItem('backgroundImage');
+            const preview = document.getElementById('currentBackgroundPreview');
+            const previewContent = document.getElementById('bgPreviewContent');
+            previewContent.innerHTML = '<i class="fas fa-image" style="font-size: 2rem; margin-bottom: 0.5rem; display: block;"></i><span>暂无背景图</span>';
+            document.getElementById('backgroundControlGroup').style.display = 'none';
+            document.getElementById('backgroundImageInput').value = '';
+            currentBackgroundFile = null;
+
+            // 恢复header默认颜色
+            resetHeaderColor();
+
+            alert('背景图已移除！');
+        }
+
+        // 初始化背景图
+        function initBackgroundImage() {
+            const savedBg = localStorage.getItem('backgroundImage');
+            if (savedBg) {
+                document.documentElement.style.setProperty('--bg-image', `url(${savedBg})`);
+                // 更新预览
+                const previewContent = document.getElementById('bgPreviewContent');
+                if (previewContent) {
+                    previewContent.innerHTML = `<img src="${savedBg}" style="max-width: 100%; max-height: 100%; object-fit: cover;">`;
+                }
+
+                // 恢复保存的header颜色
+                const savedHeaderColor = localStorage.getItem('headerColor');
+                const savedHeaderTextColor = localStorage.getItem('headerTextColor');
+                if (savedHeaderColor && savedHeaderTextColor) {
+                    try {
+                        const headerColor = JSON.parse(savedHeaderColor);
+                        updateHeaderColor(headerColor, savedHeaderTextColor);
+                    } catch (e) {
+                        // 如果解析失败，重新分析图片颜色
+                        analyzeImageColors(savedBg, function(dominantColor) {
+                            const headerColor = calculateHeaderColor(dominantColor);
+                            const textColor = getTextColor(headerColor);
+                            updateHeaderColor(headerColor, textColor);
+                        });
+                    }
+                } else {
+                    // 如果没有保存的颜色，分析图片并应用
+                    analyzeImageColors(savedBg, function(dominantColor) {
+                        const headerColor = calculateHeaderColor(dominantColor);
+                        const textColor = getTextColor(headerColor);
+                        updateHeaderColor(headerColor, textColor);
+                    });
+                }
             }
         }
 
@@ -3990,19 +4524,19 @@
                 if (!container) {
                     throw new Error('地图容器未找到，请确认页面中存在id为"map"的元素');
                 }
-                
+
                 // 检查容器是否有高度（否则地图无法显示）
                 if (container.offsetHeight === 0 || container.offsetWidth === 0) {
                     console.warn('[地图初始化] 地图容器宽高为0，地图可能无法显示');
                 }
-                
+
                 console.log('[地图初始化] 检查SDK初始化状态...');
-                
+
                 // 检查SDK内部是否已初始化，避免 coordType undefined 错误
                 if (!window.BMap || !window.BMap.Map) {
                     throw new Error('BMap.Map 不可用，这通常表示 AK 未在百度地图控制台中授权当前域名。请访问 https://lbsyun.baidu.com/apiconsole/key 添加白名单。');
                 }
-                
+
                 console.log('[地图初始化] 创建地图实例...');
                 // 创建地图实例 - 这一步可能因为AK无效导致SDK内部错误
                 try {
@@ -4011,7 +4545,7 @@
                     // 捕获 coordType 等内部错误
                     console.error('[地图初始化] BMap.Map 构造函数异常:', mapError);
                     console.error('[地图初始化] 错误信息:', mapError.toString());
-                    
+
                     // 提供诊断建议
                     if (mapError.toString().includes('coordType')) {
                         throw new Error('百度地图 SDK 内部配置异常（coordType 为 null）。这表示 AK 未在百度地图控制台中为当前域名授权。\n\n解决方案：\n1. 访问 https://lbsyun.baidu.com/apiconsole/key\n2. 找到你的应用和 API Key\n3. 点击"编辑"，在"应用授权"中添加当前域名的白名单，例如 http://localhost:5000\n4. 刷新页面重试');
@@ -4046,7 +4580,7 @@
             } catch (e) {
                 console.error("[地图初始化] 地图初始化失败:", e);
                 console.error("[地图初始化] 错误堆栈:", e.stack);
-                
+
                 // 构建用户友好的错误提示
                 var userMessage = "地图初始化失败\n\n";
                 if (e.toString && e.toString().includes('coordType')) {
@@ -4058,14 +4592,14 @@
                 } else {
                     userMessage += "错误: " + e.message;
                 }
-                
+
                 alert(userMessage);
-                
+
                 // 在页面上显示错误信息供调试
                 var errorDiv = document.getElementById('map');
                 if (errorDiv) {
-                    errorDiv.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;white-space:pre-wrap;word-break:break-all;">' + 
-                        '地图加载失败\n\n' + e.message + 
+                    errorDiv.innerHTML = '<div style="padding:20px;color:red;font-family:monospace;white-space:pre-wrap;word-break:break-all;">' +
+                        '地图加载失败\n\n' + e.message +
                         '</div>';
                 }
             }
@@ -4384,49 +4918,49 @@
             fetchModelsStatus(); // 获取并更新模型状态
 
             initMobileCamera(); // 初始化移动端摄像头功能
- 
+
         });
-        
+
         // ====== 移动端摄像头功能 ======
         let cameraStream = null;
         let captureInterval = null;
         let isMobileDevice = false;
-        
+
         function initMobileCamera() {
             // 检测是否为移动设备
             isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            
+
             if (isMobileDevice) {
                 // 显示移动端摄像头按钮
                 const mobileControls = document.querySelector('.mobile-camera-controls');
                 if (mobileControls) {
                     mobileControls.style.display = 'block';
                 }
-                
+
                 // 绑定按钮事件
                 const startBtn = document.getElementById('startCameraBtn');
                 const stopBtn = document.getElementById('stopCameraBtn');
-                
+
                 if (startBtn) {
                     startBtn.addEventListener('click', startCamera);
                 }
-                
+
                 if (stopBtn) {
                     stopBtn.addEventListener('click', stopCamera);
                 }
             }
         }
-        
+
         async function startCamera() {
             const statusDiv = document.getElementById('cameraStatus');
             const startBtn = document.getElementById('startCameraBtn');
             const stopBtn = document.getElementById('stopCameraBtn');
             const videoElement = document.getElementById('cameraPreview');
-            
+
             try {
                 statusDiv.textContent = '正在请求摄像头权限...';
                 statusDiv.style.color = '#f39c12';
-                
+
                 // 请求后置摄像头
                 const constraints = {
                     video: {
@@ -4436,26 +4970,26 @@
                     },
                     audio: false
                 };
-                
+
                 cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
                 videoElement.srcObject = cameraStream;
                 videoElement.style.display = 'block';
-                
+
                 // 切换按钮状态
                 startBtn.style.display = 'none';
                 stopBtn.style.display = 'block';
-                
+
                 statusDiv.textContent = '✓ 摄像头已开启，正在采集...';
                 statusDiv.style.color = '#27ae60';
-                
+
                 // 开始定时捕获帧并上传
                 startFrameCapture();
-                
+
             } catch (error) {
                 console.error('摄像头启动失败:', error);
                 statusDiv.textContent = '✗ 摄像头启动失败: ' + error.message;
                 statusDiv.style.color = '#e74c3c';
-                
+
                 if (error.name === 'NotAllowedError') {
                     statusDiv.textContent = '✗ 权限被拒绝，请在设置中允许摄像头访问';
                 } else if (error.name === 'NotFoundError') {
@@ -4463,51 +4997,51 @@
                 }
             }
         }
-        
+
         function stopCamera() {
             const statusDiv = document.getElementById('cameraStatus');
             const startBtn = document.getElementById('startCameraBtn');
             const stopBtn = document.getElementById('stopCameraBtn');
             const videoElement = document.getElementById('cameraPreview');
-            
+
             // 停止采集
             if (captureInterval) {
                 clearInterval(captureInterval);
                 captureInterval = null;
             }
-            
+
             // 停止摄像头流
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
                 cameraStream = null;
             }
-            
+
             videoElement.style.display = 'none';
             videoElement.srcObject = null;
-            
+
             // 切换按钮状态
             startBtn.style.display = 'block';
             stopBtn.style.display = 'none';
-            
+
             statusDiv.textContent = '摄像头已关闭';
             statusDiv.style.color = '#95a5a6';
         }
-        
+
         function startFrameCapture() {
             const videoElement = document.getElementById('cameraPreview');
             const canvas = document.getElementById('captureCanvas');
             const ctx = canvas.getContext('2d');
-            
+
             // 每2秒捕获一帧（可根据性能调整）
             captureInterval = setInterval(() => {
                 if (videoElement.videoWidth > 0) {
                     // 设置canvas尺寸
                     canvas.width = videoElement.videoWidth;
                     canvas.height = videoElement.videoHeight;
-                    
+
                     // 绘制当前帧
                     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                    
+
                     // 转换为Blob并上传
                     canvas.toBlob((blob) => {
                         if (blob) {
@@ -4517,18 +5051,18 @@
                 }
             }, 2000); // 2秒间隔
         }
-        
+
         async function uploadFrameToServer(blob) {
             try {
                 const formData = new FormData();
                 const filename = `camera_frame_${Date.now()}.jpg`;
                 formData.append('video', blob, filename);
-                
+
                 const response = await fetch('/upload_video', {
                     method: 'POST',
                     body: formData
                 });
-                
+
                 const data = await response.json();
                 if (data.status === 'success') {
                     console.log('帧上传成功');
@@ -4619,12 +5153,9 @@
             const modelPath = document.getElementById('main-model-path');
 
             if (statusBadge && statusText) {
-                if (mainData.loaded && (mainData.active || mainData.status === 'running')) {
+                if (mainData.loaded && mainData.status === 'running') {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
-                } else if (mainData.loaded) {
-                    statusBadge.className = 'model-status-badge status-idle';
-                    statusText.textContent = '已加载';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4673,17 +5204,11 @@
             const modelPath = document.getElementById('blind-road-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
+                if (modelData.loaded && modelData.status === 'running') {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
-                } else if (modelData.loaded) {
-                    statusBadge.className = 'model-status-badge status-idle';
-                    statusText.textContent = '已加载';
-                    if (placeholder) placeholder.style.display = 'flex';
-                    if (videoImg) videoImg.style.display = 'none';
-                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4713,17 +5238,11 @@
             const modelPath = document.getElementById('environment-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
+                if (modelData.loaded && modelData.status === 'running') {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
-                } else if (modelData.loaded) {
-                    statusBadge.className = 'model-status-badge status-idle';
-                    statusText.textContent = '已加载';
-                    if (placeholder) placeholder.style.display = 'flex';
-                    if (videoImg) videoImg.style.display = 'none';
-                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4753,17 +5272,11 @@
             const modelPath = document.getElementById('violence-path');
 
             if (statusBadge && statusText) {
-                if (modelData.loaded && (modelData.active || modelData.status === 'running')) {
+                if (modelData.loaded && modelData.status === 'running') {
                     statusBadge.className = 'model-status-badge status-running';
                     statusText.textContent = '运行中';
                     if (placeholder) placeholder.style.display = 'none';
                     if (videoImg) videoImg.style.display = 'block';
-                } else if (modelData.loaded) {
-                    statusBadge.className = 'model-status-badge status-idle';
-                    statusText.textContent = '已加载';
-                    if (placeholder) placeholder.style.display = 'flex';
-                    if (videoImg) videoImg.style.display = 'none';
-                    if (placeholderText) placeholderText.textContent = '已加载，等待视频';
                 } else {
                     statusBadge.className = 'model-status-badge status-placeholder';
                     statusText.textContent = '待接入';
@@ -4831,13 +5344,8 @@
             // 5. 重置上传按钮
             const uploadBtn = document.getElementById('uploadBtn');
             if (uploadBtn) uploadBtn.disabled = true;
-            
-            console.log('[resetVideoUpload] 重新上传流程完成，已清除所有旧数据');
 
-            // 复位系统状态
-            backendVideoActive = false;
-            videoStartRequestedAt = 0;
-            updateVideoStatus('未开始');
+            console.log('[resetVideoUpload] 重新上传流程完成，已清除所有旧数据');
 
             // 6. 强制刷新所有流的连接，准备下一次上传（加时间戳防缓存）
             reloadAllStreams(Date.now());
@@ -4857,22 +5365,6 @@
                 const blindRoadData = await blindRoadResponse.json();
                 const environmentData = await environmentResponse.json();
                 const violenceData = await violenceResponse.json();
-
-                // 用“是否活跃(active)”作为视频分析状态的真源
-                const anyActive = Boolean(mainData?.active || blindRoadData?.active || environmentData?.active || violenceData?.active);
-                backendVideoActive = anyActive;
-
-                if (anyActive) {
-                    updateVideoStatus('正在分析');
-                } else {
-                    // 刚触发启动的一小段时间内，显示“启动中”，避免误回退到“未开始”
-                    const withinStartupWindow = videoStartRequestedAt && (Date.now() - videoStartRequestedAt) < 10000;
-                    if (withinStartupWindow) {
-                        updateVideoStatus('启动中');
-                    } else {
-                        updateVideoStatus('未开始');
-                    }
-                }
 
                 if (mainData.status === 'success') {
                     updateModelDisplay('main', mainData);
@@ -5537,6 +6029,11 @@
 
         // 支持回车键提问
         document.addEventListener('DOMContentLoaded', function() {
+            // 初始化Logo
+            initLogo();
+            // 初始化背景图
+            initBackgroundImage();
+
             const aiInput = document.getElementById('aiQuestion');
             if (aiInput) {
                 aiInput.addEventListener('keypress', function(e) {
@@ -5546,7 +6043,7 @@
                 });
             }
 
-            // 初始化：同步主界面“使用模式/消息输入框”显示
+            // 初始化：同步主界面"使用模式/消息输入框"显示
             const modeInput = document.getElementById('settingUserMode');
             if (modeInput && modeInput.value) {
                 updateUserModeUI(modeInput.value);
