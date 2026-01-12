@@ -20,7 +20,7 @@ from models.database import init_database
 
 def create_app():
     """创建并配置Flask应用"""
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder='static', static_url_path='/static')
     
     # 应用配置
     app.secret_key = SECRET_KEY

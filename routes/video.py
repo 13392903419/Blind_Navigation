@@ -31,7 +31,7 @@ from ultralytics import YOLO
 
 from utils.decorators import login_required
 from utils.video_utils import allowed_file, create_error_frame, create_info_frame
-from utils.voice_utils import speak, get_prompt_template
+from utils.voice_utils import speak, speak_urgent, get_prompt_template, set_speech_complete_callback
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
 
 # 加载YOLO模型 - 使用相对路径
@@ -201,9 +201,23 @@ video_active = False
 last_call_time = 0
 current_speech_text = ""
 
+# === 音画同步状态 ===
+speech_sync_state = {
+    'is_speaking': False,       # 是否正在播报
+    'trigger_frame_id': 0,      # 触发语音的帧ID
+    'speech_text': '',          # 当前语音内容
+    'speech_start_time': 0,     # 语音开始时间
+    'speech_duration': 2.0,     # 预估语音持续时间（秒）
+    'freeze_frame': None,       # 冻结帧（用于前端暂停时显示）
+}
+speech_sync_lock = threading.Lock()
+# 注意：语音完成回调在 clear_speech_sync_state 定义之后注册（见下方）
+
 # 语音播报优化 - 混合架构（静态优先 + 大模型缓存）
-SPEECH_COOLDOWN = 3.0  # 语音播报冷却时间（秒）
+SPEECH_COOLDOWN = 2.0  # 普通语音播报冷却时间（秒）
+FIGHT_COOLDOWN = 1.0   # fight紧急播报冷却时间（秒）- 更短以保证及时响应
 last_speech_time = 0  # 最后一次语音播报的时间
+last_fight_urgent_time = 0  # 最后一次fight紧急播报的时间
 last_direction = None  # 最后一次播报的方向（用于去重）
 last_obstacle_type = None  # 最后一次播报的障碍物类型（用于去重）
 # 音画对齐基准延迟（秒），动态自适应时作为下限
@@ -231,14 +245,14 @@ PROMPT_LIBRARY = {
         'straight': '直行',
         'change': '盲道方向变化'
     },
-    # 障碍物提示
+    # 障碍物提示（对应环境感知模型的5种类别）
+    # 0:Automobile 1:Obstacle 2:Person 3:Road 4:Sidewalk
     'obstacles': {
-        'step': '有台阶',
-        'stairs': '警告，有台阶',
+        'automobile': '注意车辆',
+        'obstacle': '有障碍物',
         'person': '有行人',
-        'vehicle': '注意车辆',
-        'construction': '有施工',
-        'interrupt': '盲道中断',
+        'road': '前方是道路',
+        'sidewalk': '前方是人行道',
         'default': '有障碍'
     },
     # 紧急提示（最高优先级，立即播报）
@@ -783,6 +797,47 @@ last_fight_speak_time = 0
 last_obstacle_speak_time = 0
 last_blind_road_speak_time = 0
 
+def set_speech_sync_state(frame_id, frame, speech_text, is_urgent=False):
+    """
+    设置语音同步状态，用于前端音画同步
+    Args:
+        frame_id: 触发语音的帧ID
+        frame: 触发语音时的帧画面（用于冻结显示）
+        speech_text: 语音内容
+        is_urgent: 是否紧急播报
+    """
+    global speech_sync_state
+    # 根据文本长度估算语音持续时间（约每字0.3秒）
+    text_len = len(speech_text) if speech_text else 0
+    duration = max(1.5, min(text_len * 0.25, 5.0))  # 1.5~5秒
+    if is_urgent:
+        duration = max(1.0, duration * 0.7)  # 紧急播报更快
+    
+    with speech_sync_lock:
+        speech_sync_state['is_speaking'] = True
+        speech_sync_state['trigger_frame_id'] = frame_id
+        speech_sync_state['speech_text'] = speech_text
+        speech_sync_state['speech_start_time'] = time.time()
+        speech_sync_state['speech_duration'] = duration
+        # 保存冻结帧的JPEG编码
+        if frame is not None:
+            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if ret:
+                speech_sync_state['freeze_frame'] = buffer.tobytes()
+    
+    print(f"[音画同步] 设置语音状态: frame_id={frame_id}, duration={duration:.1f}s, text='{speech_text}'")
+
+def clear_speech_sync_state():
+    """清除语音同步状态（语音播放完成后调用）"""
+    global speech_sync_state
+    with speech_sync_lock:
+        speech_sync_state['is_speaking'] = False
+        speech_sync_state['freeze_frame'] = None
+    print("[音画同步] 语音播放完成，清除同步状态")
+
+# 注册语音完成回调 - 语音播放完成后自动清除同步状态
+set_speech_complete_callback(clear_speech_sync_state)
+
 def combiner_worker():
     """
     收集三模型结果，同帧绘制后写入 result_queue
@@ -790,11 +845,27 @@ def combiner_worker():
     """
     global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
     global last_direction, last_obstacle_type, last_speech_time, last_speech_ready_time, voice_latency_avg
+    global last_fight_urgent_time  # fight紧急播报专用时间戳
 
     # 各类型的提示间隔（秒）
     FIGHT_SPEAK_INTERVAL = 2.0
     OBSTACLE_SPEAK_INTERVAL = 2.0
     BLIND_ROAD_SPEAK_INTERVAL = 2.0
+    
+    # === 危险状态追踪（用于危险消失后重新提示盲道方向）===
+    was_fight_detected = False      # 上一帧是否检测到打架
+    was_obstacle_detected = False   # 上一帧是否检测到盲道上的障碍物
+    current_blind_direction = 'straight'  # 当前盲道方向（用于危险消失后重新提示）
+    DANGER_CLEAR_COOLDOWN = 3.0     # 危险消失后的提示冷却时间（秒）- 增加到3秒减少频繁播报
+    last_danger_clear_time = 0      # 上次危险消失提示的时间
+    
+    # === 智能播报状态追踪 ===
+    obstacle_alert_triggered = False   # 是否已经对当前障碍物播报过（用于判断是否需要播报"已通过"）
+    last_obstacle_alert_time = 0       # 上次障碍物警示播报的时间
+    consecutive_obstacle_frames = 0    # 连续检测到盲道上障碍物的帧数
+    consecutive_clear_frames = 0       # 连续没有检测到盲道上障碍物的帧数
+    MIN_OBSTACLE_FRAMES = 3            # 至少连续N帧检测到障碍物才播报（避免误检）
+    MIN_CLEAR_FRAMES = 5               # 至少连续N帧没有障碍物才播报"已通过"（避免闪烁）
 
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
@@ -836,19 +907,51 @@ def combiner_worker():
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
                 blind_detected = True
 
-            # 检测到盲道且置信度高于0.6时，触发语音提示
-            if blind_detected and blind_confidences and max(blind_confidences) > 0.6:
+            # 检测到盲道且置信度高于0.5时，触发语音提示
+            if blind_detected and blind_confidences and max(blind_confidences) > 0.5:
+                # 计算盲道方向：基于检测框中心点拟合斜率
+                centers = []
+                for box in b_res['boxes']:
+                    bx1, by1, bx2, by2 = box.xyxy[0].cpu().numpy().astype(int)
+                    center_x = (bx1 + bx2) / 2
+                    center_y = (by1 + by2) / 2
+                    centers.append((center_x, center_y))
+                
+                # 根据检测框数量和斜率判断方向
+                detected_direction = 'straight'  # 默认直行
+                if len(centers) >= 2:
+                    # 使用线性拟合计算斜率：y坐标作为自变量，x坐标作为因变量
+                    ys = np.array([c[1] for c in centers])
+                    xs = np.array([c[0] for c in centers])
+                    try:
+                        slope, _ = np.polyfit(ys, xs, 1)
+                        # 斜率阈值判断（使用config中的THRESHOLD_SLOPE）
+                        if slope < -THRESHOLD_SLOPE:
+                            detected_direction = 'left'
+                            print(f"[盲道方向] 检测到左转，斜率: {slope:.3f}")
+                        elif slope > THRESHOLD_SLOPE:
+                            detected_direction = 'right'
+                            print(f"[盲道方向] 检测到右转，斜率: {slope:.3f}")
+                        else:
+                            print(f"[盲道方向] 直行，斜率: {slope:.3f}")
+                    except Exception as e:
+                        print(f"[盲道方向] 斜率计算失败: {e}")
+                
+                # 保存当前盲道方向（用于危险消失后重新提示）
+                current_blind_direction = detected_direction
+                
                 if should_speak_now(current_time):
-                    # 简化盲道提示：始终使用"直行"提示，除非有其他标记
-                    if check_direction_change('straight'):
+                    if check_direction_change(detected_direction):
                         try:
                             user_settings = get_user_settings_for_video()
-                            speech_content = get_blind_road_prompt('straight')
+                            speech_content = get_blind_road_prompt(detected_direction)
                             # 30% 概率添加鼓励词
                             encouragement = get_encouragement_prompt()
                             if encouragement:
                                 speech_content += "，" + encouragement
                             current_speech_text = speech_content
+                            # 设置音画同步状态
+                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
                             _ts = time.time()
                             speak(speech_content, user_settings)
                             update_voice_ready(_ts)
@@ -859,8 +962,33 @@ def combiner_worker():
 
             # 环境感知绘制
             e_res = buf['environment']
-            obstacle_detected = False
-            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度)
+            obstacle_detected_on_path = False  # 仅记录盲道上的障碍物用于语音
+            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度, 类型)
+            # 环境感知模型类别映射: 0:Automobile 1:Obstacle 2:Person 3:Road 4:Sidewalk
+            ENV_CLASS_MAP = {
+                0: 'automobile',
+                1: 'obstacle',
+                2: 'person',
+                3: 'road',
+                4: 'sidewalk'
+            }
+            # 需要提示的障碍物类别（排除road和sidewalk，这些不是障碍）
+            ALERT_CLASSES = {0, 1, 2}  # automobile, obstacle, person
+
+            # 计算盲道水平范围，用于过滤盲道以外的障碍物（如两侧树木）
+            blind_lane_range = None
+            if blind_detected and b_res['boxes'] is not None and len(b_res['boxes']) > 0:
+                xs = []
+                for box in b_res['boxes']:
+                    bx1, _, bx2, _ = box.xyxy[0].cpu().numpy().astype(int)
+                    xs.extend([bx1, bx2])
+                if xs:
+                    lane_min, lane_max = min(xs), max(xs)
+                    lane_width = lane_max - lane_min
+                    # 给盲道边缘留一点缓冲，避免过于敏感
+                    margin = int(lane_width * 0.1)
+                    blind_lane_range = (max(0, lane_min - margin), min(frame.shape[1], lane_max + margin))
+            
             if e_res['boxes'] is not None:
                 for box in e_res['boxes']:
                     x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
@@ -877,28 +1005,48 @@ def combiner_worker():
                     else:
                         position = "前方"
 
-                    obstacle_positions.append((position, conf))
+                    # 获取类别名称
+                    cls_name = ENV_CLASS_MAP.get(cls, 'obstacle')
+                    
+                    # 只有需要警示的类别且位于盲道范围内才记录
+                    on_blind_lane = False
+                    if blind_lane_range:
+                        on_blind_lane = blind_lane_range[0] <= box_center_x <= blind_lane_range[1]
+                    if cls in ALERT_CLASSES and on_blind_lane:
+                        obstacle_positions.append((position, conf, cls_name))
+                        obstacle_detected_on_path = True
 
-                    if blind_detected:
-                        label = "obstacle"
-                        color = (0,0,255)
+                    # 绘制检测框
+                    if blind_detected and cls in ALERT_CLASSES:
+                        label = cls_name
+                        color = (0,0,255)  # 红色表示障碍
                     else:
-                        label = e_res['names'].get(cls,'obj')
-                        color = (255,0,0)
+                        label = cls_name
+                        color = (255,0,0) if cls in ALERT_CLASSES else (0,128,0)  # 蓝色障碍，绿色安全区域
                     cv2.rectangle(frame,(x1,y1),(x2,y2),color,2)
                     cv2.putText(frame,f"{label}:{conf:.2f}",(x1,y1-5),
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
 
-                    obstacle_detected = True
-
-            # 检测到障碍物且置信度高于0.7时，触发语音提示
-            if obstacle_detected and obstacle_positions:
+            # === 智能障碍物播报逻辑 ===
+            # 只有盲道范围内的障碍物才影响行走，盲道外的障碍物（如两侧的树）不触发语音
+            
+            # 更新连续帧数统计
+            if obstacle_detected_on_path and obstacle_positions:
+                consecutive_obstacle_frames += 1
+                consecutive_clear_frames = 0
+            else:
+                consecutive_clear_frames += 1
+                consecutive_obstacle_frames = 0
+            
+            # 检测到盲道上的障碍物且置信度高于0.5时，触发语音提示
+            # 需要连续至少 MIN_OBSTACLE_FRAMES 帧检测到才播报（避免单帧误检）
+            if obstacle_detected_on_path and obstacle_positions and consecutive_obstacle_frames >= MIN_OBSTACLE_FRAMES:
                 # 找到置信度最高的障碍物
                 best_obstacle = max(obstacle_positions, key=lambda x: x[1])
-                if best_obstacle[1] > 0.7:
+                if best_obstacle[1] > 0.5:
                     if should_speak_now(current_time):
-                        # 收集所有高置信度障碍物类型
-                        obstacle_types = ['default']  # 默认障碍物类型
+                        # 获取最高置信度障碍物的类型
+                        obstacle_types = [best_obstacle[2]]  # 使用实际检测到的类型
                         position = best_obstacle[0]  # 位置：左侧/右侧/前方
                         # 将中文位置映射为英文key
                         pos_map = {'左侧': 'left', '右侧': 'right', '前方': 'front'}
@@ -918,11 +1066,16 @@ def combiner_worker():
                                     user_settings=user_settings
                                 )
                                 current_speech_text = speech_content
+                                # 设置音画同步状态
+                                set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
                                 _ts = time.time()
                                 speak(speech_content, user_settings)
                                 update_voice_ready(_ts)
-                                print(f"[语音提示] 障碍物检测 - {speech_content}")
+                                print(f"[语音提示] 盲道上障碍物 - {speech_content}")
                                 last_obstacle_speak_time = current_time
+                                # 标记已对此障碍物播报过警示
+                                obstacle_alert_triggered = True
+                                last_obstacle_alert_time = current_time
                             except Exception as e:
                                 print(f"[语音提示] 障碍物语音播放错误: {e}")
 
@@ -956,34 +1109,91 @@ def combiner_worker():
                     cv2.putText(frame, label, (x1, y1 - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-            # 检测到fight行为且置信度高于0.6时，触发语音提示
-            if fight_detected and fight_confidence > 0.6:
-                if should_speak_now(current_time):
-                    # 暴力行为使用紧急提示（最高优先级）
-                    if check_obstacle_change('fight'):
-                        try:
-                            user_settings = get_user_settings_for_video()
-                            # 使用紧急提示，立即返回静态文本
-                            speech_content = get_smart_prompt(
-                                direction='fight',
-                                obstacles=[],
-                                position=None,
-                                urgency='urgent',
-                                user_settings=user_settings
-                            )
-                            current_speech_text = speech_content
-                            _ts = time.time()
-                            speak(speech_content, user_settings)
-                            update_voice_ready(_ts)
-                            print(f"[语音提示] 暴力行为检测 - {speech_content} (置信度: {fight_confidence:.2f})")
-                            last_fight_speak_time = current_time
-                        except Exception as e:
-                            print(f"[语音提示] 暴力行为语音播放错误: {e}")
+            # 检测到fight行为且置信度高于0.5时，立即触发紧急语音提示
+            # 【最高优先级】使用更短的冷却时间(1秒)，跳过去重检查，清空队列后立即播报
+            if fight_detected and fight_confidence > 0.5:
+                # 使用专用的fight冷却时间（1秒），比普通播报更短
+                if current_time - last_fight_urgent_time >= FIGHT_COOLDOWN:
+                    try:
+                        user_settings = get_user_settings_for_video()
+                        # 使用紧急提示，立即返回静态文本
+                        speech_content = get_smart_prompt(
+                            direction='fight',
+                            obstacles=[],
+                            position=None,
+                            urgency='urgent',
+                            user_settings=user_settings
+                        )
+                        current_speech_text = speech_content
+                        # 设置音画同步状态（紧急模式）
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=True)
+                        # 使用紧急播报函数 - 清空队列并立即播放
+                        speak_urgent(speech_content, user_settings)
+                        # 更新fight专用时间戳
+                        last_fight_urgent_time = current_time
+                        last_fight_speak_time = current_time
+                        print(f"[语音提示-紧急] ⚠️ 暴力行为检测 - {speech_content} (置信度: {fight_confidence:.2f})")
+                    except Exception as e:
+                        print(f"[语音提示] 暴力行为语音播放错误: {e}")
 
-            # 送给显示线程
+            # === 危险消失检测：当障碍物或打架消失后，重新提示当前盲道方向 ===
+            # 智能判断：只有之前确实播报过警示，且连续多帧没有检测到危险时才播报"已通过"
+            danger_cleared = False
+            clear_type = None
+            
+            # 检测打架消失
+            if was_fight_detected and not fight_detected:
+                danger_cleared = True
+                clear_type = 'fight'
+                print("[危险消失] 打架行为已消失")
+            
+            # 检测盲道上的障碍物消失（智能判断）
+            # 条件1：之前确实播报过障碍物警示（obstacle_alert_triggered = True）
+            # 条件2：连续至少 MIN_CLEAR_FRAMES 帧没有检测到盲道上的障碍物（避免闪烁误报）
+            # 条件3：距离上次障碍物警示至少1秒（避免刚播报完障碍物立刻说"已通过"）
+            if (not danger_cleared and 
+                obstacle_alert_triggered and 
+                consecutive_clear_frames >= MIN_CLEAR_FRAMES and
+                current_time - last_obstacle_alert_time >= 1.0):
+                danger_cleared = True
+                clear_type = 'obstacle'
+                obstacle_alert_triggered = False  # 重置标志，避免重复播报
+                print("[危险消失] 盲道上障碍物已通过（智能判断）")
+            
+            # 危险消失后，重新播报当前盲道方向
+            if danger_cleared and (current_time - last_danger_clear_time >= DANGER_CLEAR_COOLDOWN):
+                try:
+                    user_settings = get_user_settings_for_video()
+                    # 根据消失类型构建提示语
+                    if clear_type == 'fight':
+                        prefix = "危险解除，"
+                    else:
+                        prefix = "障碍物已通过，"
+                    
+                    # 获取当前盲道方向提示
+                    direction_prompt = get_blind_road_prompt(current_blind_direction)
+                    speech_content = prefix + direction_prompt
+                    
+                    current_speech_text = speech_content
+                    set_speech_sync_state(fid, frame, speech_content, is_urgent=False)
+                    _ts = time.time()
+                    speak(speech_content, user_settings)
+                    update_voice_ready(_ts)
+                    last_danger_clear_time = current_time
+                    # 重置方向去重，确保下次方向变化能正常触发
+                    last_direction = current_blind_direction
+                    print(f"[语音提示-危险消失] {speech_content}")
+                except Exception as e:
+                    print(f"[语音提示] 危险消失提示错误: {e}")
+            
+            # 更新上一帧的危险状态
+            was_fight_detected = fight_detected
+            was_obstacle_detected = obstacle_detected_on_path  # 只追踪盲道上的障碍物
+
+            # 送给显示线程（携带帧ID用于音画同步）
             try:
                 ready_at = max(current_time, last_speech_ready_time)
-                result_queue.put_nowait({'frame': frame, 'ready_at': ready_at})
+                result_queue.put_nowait({'frame': frame, 'frame_id': fid, 'ready_at': ready_at})
             except queue.Full:
                 pass
             # 清缓存
@@ -2279,6 +2489,59 @@ def stream_speech_text():
             time.sleep(0.5)
 
     return Response(generate(), mimetype='text/event-stream')
+
+
+@video_bp.route('/speech_sync_status')
+def speech_sync_status():
+    """
+    获取语音同步状态 - 用于前端音画同步控制
+    返回：是否正在播报、触发帧ID、预计剩余时间
+    """
+    global speech_sync_state
+    
+    with speech_sync_lock:
+        is_speaking = speech_sync_state['is_speaking']
+        trigger_frame_id = speech_sync_state['trigger_frame_id']
+        speech_text = speech_sync_state['speech_text']
+        start_time = speech_sync_state['speech_start_time']
+        duration = speech_sync_state['speech_duration']
+    
+    # 计算剩余时间
+    elapsed = time.time() - start_time if start_time > 0 else 0
+    remaining = max(0, duration - elapsed)
+    
+    # 如果已超时，自动清除状态
+    if is_speaking and remaining <= 0:
+        clear_speech_sync_state()
+        is_speaking = False
+        remaining = 0
+    
+    return jsonify({
+        'is_speaking': is_speaking,
+        'trigger_frame_id': trigger_frame_id,
+        'speech_text': speech_text,
+        'remaining_time': round(remaining, 2),
+        'duration': duration
+    })
+
+
+@video_bp.route('/freeze_frame')
+def get_freeze_frame():
+    """
+    获取冻结帧 - 语音播报时显示的静止画面
+    返回：JPEG图像
+    """
+    global speech_sync_state
+    
+    with speech_sync_lock:
+        freeze_frame = speech_sync_state.get('freeze_frame')
+        is_speaking = speech_sync_state.get('is_speaking', False)
+    
+    if freeze_frame and is_speaking:
+        return Response(freeze_frame, mimetype='image/jpeg')
+    else:
+        # 没有冻结帧时返回空
+        return Response(status=204)
 
 
 @video_bp.route('/start_test', methods=['POST'])

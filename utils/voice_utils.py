@@ -12,6 +12,28 @@ speech_queue = queue.Queue()
 speech_thread_started = False
 speech_lock = threading.Lock()
 
+# 紧急语音标志 - 用于打断当前播放
+urgent_interrupt = threading.Event()
+# 当前正在播放的引擎实例（用于紧急打断）
+current_engine = None
+current_engine_lock = threading.Lock()
+
+# 语音完成回调函数 - 用于通知视频模块清除同步状态
+speech_complete_callback = None
+
+
+def set_speech_complete_callback(callback):
+    """
+    设置语音播放完成后的回调函数
+    用于音画同步：语音结束后通知视频模块解除画面冻结
+    
+    Args:
+        callback: 回调函数，无参数
+    """
+    global speech_complete_callback
+    speech_complete_callback = callback
+    print("[语音] 已设置语音完成回调函数")
+
 
 def get_available_voices():
     """获取系统可用的语音列表"""
@@ -44,14 +66,16 @@ def speech_worker():
     while True:
         try:
             # 从队列中获取任务
-            text, user_settings = speech_queue.get()
+            task = speech_queue.get()
             
-            if text is None:  # None 用于停止线程
+            if task is None:  # None 用于停止线程
                 print("[语音工作线程] 收到停止信号")
                 break
             
-            print(f"[语音工作线程] 开始处理: '{text}'")
-            _do_speak(text, user_settings)
+            text, user_settings, is_urgent = task
+            
+            print(f"[语音工作线程] 开始处理: '{text}' (紧急: {is_urgent})")
+            _do_speak(text, user_settings, is_urgent)
             speech_queue.task_done()
         except Exception as e:
             print(f"[语音工作线程] 错误: {e}")
@@ -59,17 +83,23 @@ def speech_worker():
             traceback.print_exc()
 
 
-def _do_speak(text, user_settings):
+def _do_speak(text, user_settings, is_urgent=False):
     """
     实际的语音合成和播放函数
     
     Args:
         text: 要播放的文本
         user_settings: 用户设置字典，包含 voice_speed 和 voice_volume
+        is_urgent: 是否为紧急播报（紧急播报语速更快）
     """
+    global current_engine
     try:
-        print(f"[语音] 开始合成语音: '{text}'")
+        print(f"[语音] 开始合成语音: '{text}' (紧急: {is_urgent})")
         local_engine = pyttsx3.init()
+        
+        # 保存当前引擎引用（用于紧急打断）
+        with current_engine_lock:
+            current_engine = local_engine
 
         # 获取可用语音列表
         voices = local_engine.getProperty('voices')
@@ -100,22 +130,28 @@ def _do_speak(text, user_settings):
         else:
             print("[语音] 警告: 未找到可用语音")
 
-        # 根据用户设置调整语音速度
-        if user_settings["voice_speed"] == "慢":
-            local_engine.setProperty('rate', 150)
-        elif user_settings["voice_speed"] == "快":
-            local_engine.setProperty('rate', 250)
-        else:  # 中等
-            local_engine.setProperty('rate', 200)
+        # 紧急播报使用更快的语速
+        if is_urgent:
+            local_engine.setProperty('rate', 280)  # 紧急时更快
+            local_engine.setProperty('volume', 1.0)  # 最大音量
+            print("[语音] 紧急模式：最快语速+最大音量")
+        else:
+            # 根据用户设置调整语音速度
+            if user_settings["voice_speed"] == "慢":
+                local_engine.setProperty('rate', 150)
+            elif user_settings["voice_speed"] == "快":
+                local_engine.setProperty('rate', 250)
+            else:  # 中等
+                local_engine.setProperty('rate', 200)
 
-        # 设置音量
-        volume_mapping = {
-            "低": 0.5,
-            "中等": 0.8,
-            "高": 1.0
-        }
-        volume = volume_mapping.get(user_settings["voice_volume"], 0.8)
-        local_engine.setProperty('volume', volume)
+            # 设置音量
+            volume_mapping = {
+                "低": 0.5,
+                "中等": 0.8,
+                "高": 1.0
+            }
+            volume = volume_mapping.get(user_settings["voice_volume"], 0.8)
+            local_engine.setProperty('volume', volume)
 
         # 实际播放语音
         print(f"[语音] 播放文本: {text}")
@@ -124,11 +160,26 @@ def _do_speak(text, user_settings):
         print("[语音] 开始runAndWait()...")
         local_engine.runAndWait()
         print("[语音] 播放完成")
+        
+        # 清除引擎引用
+        with current_engine_lock:
+            current_engine = None
+        
+        # 调用完成回调 - 通知视频模块清除同步状态
+        if speech_complete_callback:
+            try:
+                speech_complete_callback()
+                print("[语音] 已通知同步状态清除")
+            except Exception as cb_e:
+                print(f"[语音] 回调执行错误: {cb_e}")
+        
         return True
     except Exception as e:
         print(f"[语音] 错误: {e}")
         import traceback
         traceback.print_exc()
+        with current_engine_lock:
+            current_engine = None
         return False
 
 
@@ -150,9 +201,49 @@ def speak(text, user_settings):
             speech_thread_started = True
             print("[语音] 语音工作线程已启动")
     
-    # 将任务添加到队列
+    # 将任务添加到队列（普通优先级）
     print(f"[语音] 将任务添加到队列: '{text}'")
-    speech_queue.put((text, user_settings))
+    speech_queue.put((text, user_settings, False))
+    return True
+
+
+def speak_urgent(text, user_settings):
+    """
+    紧急语音播报 - 清空队列并立即播报（最高优先级）
+    用于危险情况（如检测到暴力行为）
+    
+    Args:
+        text: 要播放的文本
+        user_settings: 用户设置字典
+    """
+    global speech_thread_started
+    
+    print(f"[语音-紧急] ⚠️ 紧急播报请求: '{text}'")
+    
+    # 启动语音工作线程（只启动一次）
+    with speech_lock:
+        if not speech_thread_started:
+            worker_thread = threading.Thread(target=speech_worker, daemon=True)
+            worker_thread.start()
+            speech_thread_started = True
+            print("[语音] 语音工作线程已启动")
+    
+    # 清空当前队列中的所有待播任务
+    cleared_count = 0
+    while not speech_queue.empty():
+        try:
+            speech_queue.get_nowait()
+            speech_queue.task_done()
+            cleared_count += 1
+        except queue.Empty:
+            break
+    
+    if cleared_count > 0:
+        print(f"[语音-紧急] 已清空 {cleared_count} 条待播任务")
+    
+    # 将紧急任务放入队列头部（实际上队列已清空，直接放入即可）
+    speech_queue.put((text, user_settings, True))
+    print(f"[语音-紧急] 紧急任务已加入队列")
     return True
 
 
