@@ -70,6 +70,9 @@ ROAD_SAFE_SPEAK_COOLDOWN = 10.0          # "道路安全"语音播报间隔10秒
 # 模型1（Blind Road）盲道检测配置  
 BLIND_ROAD_DISAPPEAR_TIMEOUT = 5.0      # 盲道消失超时5秒
 
+# 音画同步配置 - 语音预触发+画面延迟推送
+SPEECH_TRIGGERED_FRAME_DELAY = 1      # 触发语音时，画面延迟1秒推送（让语音先启动）
+
 # 加载YOLO模型 - 使用相对路径
 # 获取项目根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -936,6 +939,29 @@ last_fight_speak_time = 0
 last_obstacle_speak_time = 0
 last_blind_road_speak_time = 0
 
+def delayed_frame_push(frame_data, delay=SPEECH_TRIGGERED_FRAME_DELAY):
+    """
+    延迟推送画面到result_queue（语音预触发时使用）
+    在语音触发时，延迟短暂时间后再推送画面，让语音先启动
+    
+    Args:
+        frame_data: 要推送的帧数据字典
+        delay: 延迟时间（秒），默认使用配置值
+    """
+    def _push_after_delay():
+        try:
+            time.sleep(delay)
+            result_queue.put_nowait(frame_data)
+            print(f"[延迟推送] 帧 {frame_data.get('frame_id')} 已延迟{delay}秒推送（语音预触发模式）")
+        except queue.Full:
+            print(f"[延迟推送] 队列满，丢弃帧 {frame_data.get('frame_id')}")
+        except Exception as e:
+            print(f"[延迟推送] 错误: {e}")
+    
+    # 启动延迟推送线程
+    threading.Thread(target=_push_after_delay, daemon=True).start()
+
+
 def set_speech_sync_state(frame_id, frame, speech_text, is_urgent=False, capture_ts=None):
     """
     设置语音同步状态，用于前端音画同步（时间戳对齐版本）
@@ -1092,6 +1118,7 @@ def combiner_worker():
         if all(k in buf for k in required_models):
             frame = buf['frame']
             current_time = time.time()
+            speech_triggered_this_frame = False  # 标记本帧是否触发语音（用于延迟推送）
             
             # 获取帧捕获时间戳（从任意模型结果中提取，用于音画对齐）
             capture_ts = buf['blind_road'].get('capture_ts', current_time)
@@ -1150,6 +1177,7 @@ def combiner_worker():
                         set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
                         speak(speech_content, user_settings)
                         blind_road_appeared = True
+                        speech_triggered_this_frame = True  # 标记已触发语音
                         print(f"[语音提示] 模型1 - {speech_content} (连续{consecutive_blind_road_frames}帧)")
                     except Exception as e:
                         print(f"[语音提示] 盲道出现播报错误: {e}")
@@ -1167,6 +1195,7 @@ def combiner_worker():
                             speak(speech_content, user_settings)
                             blind_road_disappear_announced = True
                             blind_road_appeared = False  # 重置，下次出现可以再播报
+                            speech_triggered_this_frame = True  # 标记已触发语音
                             print(f"[语音提示] 模型1 - {speech_content}")
                         except Exception as e:
                             print(f"[语音提示] 盲道消失播报错误: {e}")
@@ -1298,7 +1327,8 @@ def combiner_worker():
                                 user_settings = get_user_settings_for_video()
                                 current_speech_text = speech_content
                                 set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
-                                speak(speech_content, user_settings)
+                                speak(speech_content, user_settings)  # 先启动语音（异步）
+                                speech_triggered_this_frame = True  # 标记已触发语音
                                 print(f"[语音提示] 模型2环境检测 - {speech_content}")
                             except Exception as e:
                                 print(f"[语音提示] 环境播报错误: {e}")
@@ -1414,11 +1444,13 @@ def combiner_worker():
                         speech_content = "前方有冲突"
                         current_speech_text = speech_content
                         set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
-                        speak_urgent(speech_content, user_settings)  # 最高优先级，语速加快
+                        speak_urgent(speech_content, user_settings)  # 先启动语音（异步）
                         last_fight_speak_time_v3 = current_time
+                        speech_triggered_this_frame = True  # 标记已触发语音
                         print(f"[语音提示-紧急] 模型3冲突检测 - {speech_content} (连续{consecutive_violence_frames}帧, 面积: {violence_fight_area_ratio*100:.1f}%, 置信度: {violence_fight_confidence:.2f})")
                     except Exception as e:
                         print(f"[语音提示] 冲突检测语音播放错误: {e}")
+            
             # === 危险消失检测：当障碍物或打架消失后，重新提示当前盲道方向 ===
             # 智能判断：只有之前确实播报过警示，且连续多帧没有检测到危险时才播报"已通过"
             danger_cleared = False
@@ -1491,12 +1523,20 @@ def combiner_worker():
                 else:
                     ready_at = max(current_time, last_speech_ready_time)
                 
-                result_queue.put_nowait({
+                frame_data = {
                     'frame': frame,
                     'frame_id': fid,
                     'capture_ts': capture_ts,
                     'ready_at': ready_at
-                })
+                }
+                
+                # 如果本帧触发了语音，使用延迟推送让语音先启动
+                if speech_triggered_this_frame:
+                    delayed_frame_push(frame_data)
+                    print(f"[音画同步] 帧{fid}触发语音，延迟{SPEECH_TRIGGERED_FRAME_DELAY}秒推送画面")
+                else:
+                    # 否则立即推送
+                    result_queue.put_nowait(frame_data)
             except queue.Full:
                 pass
             # 清缓存
