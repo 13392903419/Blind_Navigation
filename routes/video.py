@@ -61,6 +61,7 @@ def put_chinese_text(img, text, position, color=(0, 255, 0), font_size=20):
 FIGHT_CONFIDENCE_THRESHOLD = 0.50       # 模型3置信度阈值>0.5触发
 FIGHT_MIN_AREA_RATIO = 0.05             # fight框面积至少占画面>5%才认为有效
 FIGHT_SPEAK_COOLDOWN = 5.0              # 模型3冲突检测语音冷却5秒
+MIN_FIGHT_CLEAR_FRAMES = 30             # 至少连续30帧未检测到fight才播报"危险解除"（可根据视频帧率调整）
 
 # 模型2（Environment）环境检测配置
 ENV_DOMINANT_AREA_RATIO = 0.30          # 主导占比阈值>20%画面才播报
@@ -1082,8 +1083,9 @@ def combiner_worker():
     MIN_VIOLENCE_FRAMES = 5             # 至少连续5帧检测到fight才触发
 
     # === 模型3暴力“解除”连续帧追踪 ===
+    # 危险解除逻辑：从最后一次触发"前方有冲突"语音播报后，开始计数未检测到fight的连续帧数
     consecutive_fight_clear_frames = 0  # 连续未检测到fight的帧数（用于危险解除）
-    MIN_FIGHT_CLEAR_FRAMES = 1         # 至少连续1帧未检测到fight才播报“危险解除”（避免闪烁）
+    fight_danger_active = False         # 是否处于"危险中"状态（已播报过"前方有冲突"）
 
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
@@ -1438,19 +1440,14 @@ def combiner_worker():
             # 只有连续多帧检测到fight才认为真的有冲突
             violence_fight_detected = consecutive_violence_frames >= MIN_VIOLENCE_FRAMES
 
-            # 更新fight“解除”连续帧计数：只有在曾经检测到fight后，才开始累积未检测到的帧数
-            if violence_fight_detected:
-                consecutive_fight_clear_frames = 0
-            else:
-                if was_fight_detected or consecutive_fight_clear_frames > 0:
-                    consecutive_fight_clear_frames += 1
-                else:
-                    consecutive_fight_clear_frames = 0
-
-
             # === 模型3语音播报：暴力/冲突检测 ===
-            # 判断优先级：面积>5% -> 连续10帧 -> 置信度>0.5
+            # 判断优先级：面积>5% -> 连续5帧 -> 置信度>0.5
+            # 触发条件满足时，播报"前方有冲突"并进入"危险中"状态
             if violence_fight_detected:
+                # 每次检测到fight，都重置"危险解除"计数（重新开始计数）
+                consecutive_fight_clear_frames = 0
+                
+                # 满足冷却时间且满足所有触发条件，播报"前方有冲突"
                 if current_time - last_fight_speak_time_v3 >= FIGHT_SPEAK_COOLDOWN:
                     try:
                         user_settings = get_user_settings_for_video()
@@ -1459,25 +1456,35 @@ def combiner_worker():
                         set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
                         speak_urgent(speech_content, user_settings)  # 先启动语音（异步）
                         last_fight_speak_time_v3 = current_time
+                        fight_danger_active = True  # 进入"危险中"状态
                         speech_triggered_this_frame = True  # 标记已触发语音
                         print(f"[语音提示-紧急] 模型3冲突检测 - {speech_content} (连续{consecutive_violence_frames}帧, 面积: {violence_fight_area_ratio*100:.1f}%, 置信度: {violence_fight_confidence:.2f})")
                     except Exception as e:
                         print(f"[语音提示] 冲突检测语音播放错误: {e}")
+            else:
+                # 未检测到fight：只有在"危险中"状态时才开始计数
+                if fight_danger_active:
+                    consecutive_fight_clear_frames += 1
             
             # === 危险消失检测：当障碍物或打架消失后，重新提示当前盲道方向 ===
             # 智能判断：只有之前确实播报过警示，且连续多帧没有检测到危险时才播报"已通过"
             danger_cleared = False
             clear_type = None
             
-            # 检测打架消失
-            if was_fight_detected and not violence_fight_detected:
-                # 需要连续多帧都未再出现fight才认为真正解除
+            # 检测打架消失：只有处于"危险中"状态，且连续N帧未检测到fight才认为危险解除
+            if fight_danger_active and not violence_fight_detected:
                 if consecutive_fight_clear_frames >= MIN_FIGHT_CLEAR_FRAMES:
+                    # 先保存帧数用于打印，再重置
+                    clear_frames_count = consecutive_fight_clear_frames
                     danger_cleared = True
                     clear_type = 'fight'
-                    print(f"[危险消失] 打架行为已消失（连续{consecutive_fight_clear_frames}帧未检出）")
+                    fight_danger_active = False  # 退出"危险中"状态
+                    consecutive_fight_clear_frames = 0  # 重置计数器
+                    print(f"[危险解除] fight冲突已消失（连续{clear_frames_count}帧未检测到）")
                 else:
-                    print(f"[危险消失] 打架疑似消失，等待确认（连续{consecutive_fight_clear_frames}/{MIN_FIGHT_CLEAR_FRAMES}帧未检出）")
+                    # 调试信息：显示当前计数进度
+                    if consecutive_fight_clear_frames % 10 == 0:  # 每10帧打印一次，避免刷屏
+                        print(f"[危险解除-等待确认] 连续{consecutive_fight_clear_frames}/{MIN_FIGHT_CLEAR_FRAMES}帧未检测到fight")
             
             # 检测盲道上的障碍物消失（智能判断）
             # 条件1：之前确实播报过障碍物警示（obstacle_alert_triggered = True）
