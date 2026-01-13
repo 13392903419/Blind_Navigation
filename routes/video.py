@@ -34,6 +34,10 @@ from utils.decorators import login_required
 from utils.video_utils import allowed_file, create_error_frame, create_info_frame
 from utils.voice_utils import speak, speak_urgent, get_prompt_template, set_speech_complete_callback
 from utils.pose_utils import init_mediapipe, analyze_frame as analyze_pose, draw_pose_analysis, get_pose_voice_prompt
+from utils.navigation_utils import (
+    estimate_distance, check_spatial_relationship, 
+    find_avoidance_path, get_position_description
+)
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
 
 # ========== 中文绘制支持 ==========
@@ -291,10 +295,9 @@ PROMPT_LIBRARY = {
         'obstacle': '有障碍物',
         'person': '有行人',
         'road': '前方是道路',
-        'sidewalk': '前方是人行道',
         'default': '有障碍'
     },
-    # 紧急提示（最高优先级，立即播报）
+    # 紧急提示（最高优先级，立即播报）        'sidewalk': '前方是人行道',
     'urgent': {
         'danger': '停！危险',
         'collision': '小心碰撞',
@@ -893,7 +896,10 @@ def should_speak_now(current_time):
     Returns:
         bool: 是否应该播报
     """
-    global last_speech_time
+    global last_speech_time, speech_sync_state
+    # 如果当前正在播报且不是紧急情况，则跳过新的普通播报，避免堆积
+    if speech_sync_state.get('is_speaking'):
+        return False
     if current_time - last_speech_time >= SPEECH_COOLDOWN:
         last_speech_time = current_time
         return True
@@ -944,11 +950,11 @@ def set_speech_sync_state(frame_id, frame, speech_text, is_urgent=False, capture
         capture_ts: 帧捕获时间戳（用于精确对齐）
     """
     global speech_sync_state
-    # 根据文本长度估算语音持续时间（约每字0.25秒）
+    # 根据文本长度估算语音持续时间（约每字0.20秒）
     text_len = len(speech_text) if speech_text else 0
-    duration = max(1.5, min(text_len * 0.25, 5.0))  # 1.5~5秒
+    duration = max(1.0, min(text_len * 0.20, 4.0))  # 1.0~4秒
     if is_urgent:
-        duration = max(1.0, duration * 0.7)  # 紧急播报更快
+        duration = max(0.8, duration * 0.7)  # 紧急播报更快
     
     current_time = time.time()
     with speech_sync_lock:
@@ -1021,7 +1027,7 @@ def combiner_worker():
     was_fight_detected = False      # 上一帧是否检测到打架
     was_obstacle_detected = False   # 上一帧是否检测到盲道上的障碍物
     current_blind_direction = 'straight'  # 当前盲道方向（用于危险消失后重新提示）
-    DANGER_CLEAR_COOLDOWN = 3.0     # 危险消失后的提示冷却时间（秒）- 增加到3秒减少频繁播报
+    DANGER_CLEAR_COOLDOWN = 5.0     # 危险消失后的提示冷却时间（秒）
     last_danger_clear_time = 0      # 上次危险消失提示的时间
     
     # === 智能播报状态追踪 ===
@@ -1036,6 +1042,15 @@ def combiner_worker():
     last_pose_speak_time = 0           # 上次姿态提示的时间
     consecutive_pose_alert_frames = 0  # 连续检测到异常姿态的帧数
     MIN_POSE_ALERT_FRAMES = 5          # 至少连续N帧检测到异常才播报
+    
+    # === 状态记忆系统：跟踪盲道出现/消失状态 ===
+    was_blind_road_detected = False    # 上一帧是否检测到盲道
+    blind_road_appeared_frames = 0     # 连续检测到盲道的帧数
+    blind_road_disappeared_frames = 0  # 连续未检测到盲道的帧数
+    MIN_BLIND_ROAD_FRAMES = 3          # 至少连续N帧检测到盲道才认为出现
+    MIN_BLIND_ROAD_DISAPPEAR_FRAMES = 5  # 至少连续N帧未检测到盲道才认为消失
+    last_blind_road_merge_time = 0     # 上次盲道汇入提示的时间
+    BLIND_ROAD_MERGE_COOLDOWN = 5.0    # 盲道汇入提示冷却时间（秒）
 
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
@@ -1085,8 +1100,43 @@ def combiner_worker():
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
                 blind_detected = True
 
-            # 检测到盲道且置信度高于0.5时，触发语音提示
+            # === 盲道状态记忆更新 ===
             if blind_detected and blind_confidences and max(blind_confidences) > 0.5:
+                blind_road_appeared_frames += 1
+                blind_road_disappeared_frames = 0
+            else:
+                blind_road_disappeared_frames += 1
+                blind_road_appeared_frames = 0
+            
+            # 判断盲道是否真正出现（避免单帧误检）
+            blind_road_stable = blind_road_appeared_frames >= MIN_BLIND_ROAD_FRAMES
+            blind_road_stable_disappeared = blind_road_disappeared_frames >= MIN_BLIND_ROAD_DISAPPEAR_FRAMES
+            
+            # === 智能盲道汇入检测：从没有盲道到出现盲道 ===
+            if (blind_road_disappeared_frames >= 3 and blind_road_stable and 
+                current_time - last_blind_road_merge_time >= BLIND_ROAD_MERGE_COOLDOWN):
+                # 盲道刚刚出现，生成汇入引导
+                try:
+                    # 计算最近盲道的距离
+                    if b_res['boxes'] is not None and len(b_res['boxes']) > 0:
+                        nearest_box = min(b_res['boxes'], 
+                                         key=lambda box: box.xyxy[0][1].cpu().numpy())  # 找到最下方的（最近的）
+                        blind_distance = estimate_distance(nearest_box, frame.shape[0], frame.shape[1])
+                        
+                        user_settings = get_user_settings_for_video()
+                        speech_content = f"前方{blind_distance:.0f}米处发现盲道，请直行汇入"
+                        current_speech_text = speech_content
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                        _ts = time.time()
+                        speak(speech_content, user_settings)
+                        update_voice_ready(_ts)
+                        last_blind_road_merge_time = current_time
+                        print(f"[语音提示-盲道汇入] {speech_content}")
+                except Exception as e:
+                    print(f"[语音提示] 盲道汇入提示错误: {e}")
+            
+            # 检测到盲道且置信度高于0.5时，触发语音提示
+            if blind_road_stable:
                 # 计算盲道方向：基于检测框中心点拟合斜率
                 centers = []
                 for box in b_res['boxes']:
@@ -1118,30 +1168,11 @@ def combiner_worker():
                 # 保存当前盲道方向（用于危险消失后重新提示）
                 current_blind_direction = detected_direction
                 
-                if should_speak_now(current_time):
-                    if check_direction_change(detected_direction):
-                        try:
-                            user_settings = get_user_settings_for_video()
-                            speech_content = get_blind_road_prompt(detected_direction)
-                            # 30% 概率添加鼓励词
-                            encouragement = get_encouragement_prompt()
-                            if encouragement:
-                                speech_content += "，" + encouragement
-                            current_speech_text = speech_content
-                            # 设置音画同步状态（带时间戳善对齐）
-                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
-                            _ts = time.time()
-                            speak(speech_content, user_settings)
-                            update_voice_ready(_ts)
-                            print(f"[语音提示] 盲道检测 - {speech_content}")
-                        except Exception as e:
-                            print(f"[语音提示] 盲道语音播放错误: {e}")
-                    last_blind_road_speak_time = current_time
+                # 更新盲道检测状态
+                was_blind_road_detected = True
 
-            # 环境感知绘制
+            # === 环境感知绘制和空间关系分析 ===
             e_res = buf['environment']
-            obstacle_detected_on_path = False  # 仅记录盲道上的障碍物用于语音
-            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度, 类型)
             # 环境感知模型类别映射: 0:Automobile 1:Obstacle 2:Person 3:Road 4:Sidewalk
             ENV_CLASS_MAP = {
                 0: 'automobile',
@@ -1150,117 +1181,248 @@ def combiner_worker():
                 3: 'road',
                 4: 'sidewalk'
             }
+            SPEECH_CLASS_MAP = {
+                "automobile": "交通工具",
+                "obstacle": "障碍",
+                "person": "行人",
+                "road": "道路",
+                "sidewalk": "人行道",
+            }
             # 需要提示的障碍物类别（排除road和sidewalk，这些不是障碍）
             ALERT_CLASSES = {0, 1, 2}  # automobile, obstacle, person
-
-            # 计算盲道水平范围，用于过滤盲道以外的障碍物（如两侧树木）
-            blind_lane_range = None
-            if blind_detected and b_res['boxes'] is not None and len(b_res['boxes']) > 0:
-                xs = []
-                for box in b_res['boxes']:
-                    bx1, _, bx2, _ = box.xyxy[0].cpu().numpy().astype(int)
-                    xs.extend([bx1, bx2])
-                if xs:
-                    lane_min, lane_max = min(xs), max(xs)
-                    lane_width = lane_max - lane_min
-                    # 给盲道边缘留一点缓冲，避免过于敏感
-                    margin = int(lane_width * 0.1)
-                    blind_lane_range = (max(0, lane_min - margin), min(frame.shape[1], lane_max + margin))
+            
+            # 提取盲道和人行道检测框
+            blind_road_boxes = b_res['boxes'] if blind_road_stable and b_res['boxes'] is not None else []
+            sidewalk_boxes = []
+            obstacle_boxes = []  # 存储所有障碍物检测框（用于空间关系分析）
+            
+            # 分析环境检测结果
+            obstacle_on_blind_road = []  # 盲道上的障碍物列表 (box, distance, position, type)
+            obstacle_on_sidewalk = []    # 人行道上的障碍物列表
+            sidewalk_detected = False    # 是否检测到人行道
             
             if e_res['boxes'] is not None:
                 for box in e_res['boxes']:
-                    x1,y1,x2,y2 = box.xyxy[0].cpu().numpy().astype(int)
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                     conf = float(box.conf[0])
                     cls = int(box.cls[0])
-
-                    # 计算障碍物在图像中的位置（左、中、右）
-                    img_width = frame.shape[1]
-                    box_center_x = (x1 + x2) / 2
-                    if box_center_x < img_width / 3:
-                        position = "左侧"
-                    elif box_center_x > 2 * img_width / 3:
-                        position = "右侧"
-                    else:
-                        position = "前方"
-
-                    # 获取类别名称
                     cls_name = ENV_CLASS_MAP.get(cls, 'obstacle')
                     
-                    # 只有需要警示的类别且位于盲道范围内才记录
-                    on_blind_lane = False
-                    if blind_lane_range:
-                        on_blind_lane = blind_lane_range[0] <= box_center_x <= blind_lane_range[1]
-                    if cls in ALERT_CLASSES and on_blind_lane:
-                        obstacle_positions.append((position, conf, cls_name))
-                        obstacle_detected_on_path = True
-
+                    # 收集人行道检测框
+                    if cls == 4:  # sidewalk
+                        sidewalk_boxes.append(box)
+                        sidewalk_detected = True
+                    
+                    # 收集障碍物检测框
+                    if cls in ALERT_CLASSES:
+                        obstacle_boxes.append(box)
+                        
+                        # 分析空间关系
+                        spatial_rel = check_spatial_relationship(
+                            box, 
+                            blind_road_boxes=blind_road_boxes,
+                            sidewalk_boxes=sidewalk_boxes
+                        )
+                        
+                        # 计算距离和位置
+                        distance = estimate_distance(box, frame.shape[0], frame.shape[1])
+                        position_desc = get_position_description(box, frame.shape[1])
+                        
+                        # 判断是否在盲道上
+                        if spatial_rel['on_blind_road']:
+                            obstacle_on_blind_road.append((box, distance, position_desc, cls_name, conf))
+                        
+                        # 判断是否在人行道上
+                        if spatial_rel['on_sidewalk']:
+                            obstacle_on_sidewalk.append((box, distance, position_desc, cls_name, conf))
+                    
                     # 绘制检测框
-                    if blind_detected and cls in ALERT_CLASSES:
+                    if cls in ALERT_CLASSES:
+                        # 判断是否在盲道上
+                        is_on_blind_road = any(
+                            check_spatial_relationship(box, blind_road_boxes=[b])['on_blind_road']
+                            for b in blind_road_boxes
+                        ) if blind_road_boxes else False
+                        
                         label = cls_name
-                        color = (0,0,255)  # 红色表示障碍
+                        color = (0, 0, 255) if is_on_blind_road else (255, 0, 0)  # 红色=盲道上，蓝色=其他
                     else:
                         label = cls_name
-                        color = (255,0,0) if cls in ALERT_CLASSES else (0,128,0)  # 蓝色障碍，绿色安全区域
-                    cv2.rectangle(frame,(x1,y1),(x2,y2),color,2)
-                    cv2.putText(frame,f"{label}:{conf:.2f}",(x1,y1-5),
-                                cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
-
-            # === 智能障碍物播报逻辑 ===
-            # 只有盲道范围内的障碍物才影响行走，盲道外的障碍物（如两侧的树）不触发语音
+                        color = (0, 128, 0)  # 绿色=安全区域
+                    
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(frame, f"{label}:{conf:.2f}", (x1, y1 - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
             
-            # 更新连续帧数统计
-            if obstacle_detected_on_path and obstacle_positions:
-                consecutive_obstacle_frames += 1
-                consecutive_clear_frames = 0
-            else:
-                consecutive_clear_frames += 1
-                consecutive_obstacle_frames = 0
+            # === 新的导航逻辑：基于盲道-障碍物-行人空间关系 ===
+            frame_height, frame_width = frame.shape[0], frame.shape[1]
             
-            # 检测到盲道上的障碍物且置信度高于0.5时，触发语音提示
-            # 需要连续至少 MIN_OBSTACLE_FRAMES 帧检测到才播报（避免单帧误检）
-            if obstacle_detected_on_path and obstacle_positions and consecutive_obstacle_frames >= MIN_OBSTACLE_FRAMES:
-                # 找到置信度最高的障碍物
-                best_obstacle = max(obstacle_positions, key=lambda x: x[1])
-                if best_obstacle[1] > 0.5:
-                    if should_speak_now(current_time):
-                        # 获取最高置信度障碍物的类型
-                        obstacle_types = [best_obstacle[2]]  # 使用实际检测到的类型
-                        position = best_obstacle[0]  # 位置：左侧/右侧/前方
-                        # 将中文位置映射为英文key
-                        pos_map = {'左侧': 'left', '右侧': 'right', '前方': 'front'}
-                        pos_key = pos_map.get(position, 'front')
+            # 1. 最高优先级：安全预警（暴力行为检测）
+            # （这部分在后面处理，保持原有逻辑）
+            
+            # 2. 围绕"盲道"的核心导航逻辑
+            if blind_road_stable:
+                # 2.1 盲道存在且畅通时：基础指令
+                if not obstacle_on_blind_road:
+                    # 盲道畅通时，仅在首次检测到盲道或方向变化时播报，避免频繁干扰
+                    if should_speak_now(current_time) and check_direction_change(current_blind_direction):
+                        try:
+                            user_settings = get_user_settings_for_video()
+                            speech_content = "请沿盲道行走"
+                            current_speech_text = speech_content
+                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                            _ts = time.time()
+                            speak(speech_content, user_settings)
+                            update_voice_ready(_ts)
+                            last_blind_road_speak_time = current_time
+                            print(f"[语音提示] 盲道畅通 - {speech_content}")
+                        except Exception as e:
+                            print(f"[语音提示] 盲道语音播放错误: {e}")
+                
+                # 2.2 盲道存在但被障碍物阻挡时：两步引导
+                else:
+                    # 更新连续帧数统计
+                    consecutive_obstacle_frames += 1
+                    consecutive_clear_frames = 0
+                    
+                    # 需要连续至少 MIN_OBSTACLE_FRAMES 帧检测到才播报（避免单帧误检）
+                    if consecutive_obstacle_frames >= MIN_OBSTACLE_FRAMES:
+                        # 找到最近的障碍物
+                        nearest_obstacle = min(obstacle_on_blind_road, key=lambda x: x[1])  # 按距离排序
+                        obstacle_box, obstacle_distance, obstacle_position, obstacle_type, obstacle_conf = nearest_obstacle
                         
-                        # 检查障碍物类型变化
-                        obstacle_key = f"{obstacle_types[0]}_{pos_key}"
-                        if check_obstacle_change(obstacle_key):
+                        if obstacle_conf > 0.5 and should_speak_now(current_time):
                             try:
                                 user_settings = get_user_settings_for_video()
-                                # 使用混合架构生成语音（多障碍物时可触发大模型）
-                                speech_content = get_smart_prompt(
-                                    direction='straight',
-                                    obstacles=obstacle_types,
-                                    position=pos_key,
-                                    urgency='normal',
-                                    user_settings=user_settings
+                                
+                                # 第一步：预警
+                                obstacle_type_cn = SPEECH_CLASS_MAP.get(obstacle_type, "障碍")
+                                warning_text = f"{obstacle_distance:.0f}米处盲道上有{obstacle_type_cn}"
+                                
+                                # 第二步：给出解决方案（避障路径规划）
+                                avoidance_path = find_avoidance_path(
+                                    obstacle_box, 
+                                    blind_road_boxes, 
+                                    sidewalk_boxes if sidewalk_boxes else [],
+                                    frame_width, 
+                                    frame_height
                                 )
+                                
+                                if avoidance_path['feasible']:
+                                    direction_map = {'left': '左', 'right': '右', 'straight': '直行'}
+                                    direction_cn = direction_map.get(avoidance_path['direction'], '左')
+                                    solution_text = f"请向{direction_cn}走{avoidance_path['distance']:.1f}米避让"
+                                    speech_content = warning_text + "，" + solution_text
+                                else:
+                                    speech_content = warning_text + "，请小心通过"
+                                
                                 current_speech_text = speech_content
-                                # 设置音画同步状态（带时间戳对齐）
                                 set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
                                 _ts = time.time()
                                 speak(speech_content, user_settings)
                                 update_voice_ready(_ts)
-                                print(f"[语音提示] 盲道上障碍物 - {speech_content}")
                                 last_obstacle_speak_time = current_time
-                                # 标记已对此障碍物播报过警示
                                 obstacle_alert_triggered = True
                                 last_obstacle_alert_time = current_time
+                                print(f"[语音提示] 盲道障碍物 - {speech_content}")
                             except Exception as e:
                                 print(f"[语音提示] 障碍物语音播放错误: {e}")
+            else:
+                consecutive_obstacle_frames = 0
+                consecutive_clear_frames += 1
+            
+            # 3. 无盲道时的"人行道"导航逻辑
+            # 只有当盲道确实不存在（稳定消失或从未检测到）时才走人行道逻辑
+            # 触发条件：满足以下之一即可
+            # 1. blind_road_stable_disappeared = True（盲道已稳定消失，连续5帧未检测到）
+            # 2. blind_road_appeared_frames == 0（从未检测到盲道）
+            if blind_road_stable_disappeared or blind_road_appeared_frames == 0:
+                # 更新盲道消失状态
+                if blind_road_stable_disappeared:
+                    was_blind_road_detected = False
+                
+                # 3.1 如果人行道畅通：引导"请沿人行道行走"
+                if sidewalk_detected and not obstacle_on_sidewalk:
+                    if should_speak_now(current_time) and (current_time - last_blind_road_speak_time >= BLIND_ROAD_SPEAK_INTERVAL):
+                        try:
+                            user_settings = get_user_settings_for_video()
+                            # 选择置信度最高的人行道，提示其方位和距离
+                            best_sw = max(sidewalk_boxes, key=lambda b: float(b.conf[0])) if sidewalk_boxes else None
+                            if best_sw is not None:
+                                sw_pos = get_position_description(best_sw, frame_width)
+                                sw_dist = estimate_distance(best_sw, frame_height, frame_width)
+                                speech_content = f"{sw_pos}约{sw_dist:.0f}米处有人行道，请朝该方向行走"
+                            else:
+                                speech_content = "请沿人行道方向行走"
+                            current_speech_text = speech_content
+                            set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                            _ts = time.time()
+                            speak(speech_content, user_settings)
+                            update_voice_ready(_ts)
+                            last_blind_road_speak_time = current_time
+                            print(f"[语音提示] 人行道畅通 - {speech_content}")
+                        except Exception as e:
+                            print(f"[语音提示] 人行道语音播放错误: {e}")
+                
+                # 3.2 如果人行道被阻挡：与盲道被挡时逻辑一样
+                elif sidewalk_detected and obstacle_on_sidewalk:
+                    # 更新连续帧数统计
+                    consecutive_obstacle_frames += 1
+                    consecutive_clear_frames = 0
+                    
+                    if consecutive_obstacle_frames >= MIN_OBSTACLE_FRAMES:
+                        # 找到最近的障碍物
+                        nearest_obstacle = min(obstacle_on_sidewalk, key=lambda x: x[1])
+                        obstacle_box, obstacle_distance, obstacle_position, obstacle_type, obstacle_conf = nearest_obstacle
+                        
+                        if obstacle_conf > 0.5 and should_speak_now(current_time):
+                            try:
+                                user_settings = get_user_settings_for_video()
+                                
+                                # 第一步：预警
+                                obstacle_type_cn = SPEECH_CLASS_MAP.get(obstacle_type, "障碍")
+                                warning_text = f"{obstacle_distance:.0f}米处人行道上有{obstacle_type_cn}"
+                                
+                                # 第二步：给出解决方案
+                                avoidance_path = find_avoidance_path(
+                                    obstacle_box,
+                                    [],
+                                    sidewalk_boxes,
+                                    frame_width,
+                                    frame_height
+                                )
+                                
+                                if avoidance_path['feasible']:
+                                    direction_map = {'left': '左', 'right': '右', 'straight': '直行'}
+                                    direction_cn = direction_map.get(avoidance_path['direction'], '左')
+                                    solution_text = f"请向{direction_cn}走{avoidance_path['distance']:.1f}米避让"
+                                    speech_content = warning_text + "，" + solution_text
+                                else:
+                                    speech_content = warning_text + "，请小心通过"
+                                
+                                current_speech_text = speech_content
+                                set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                                _ts = time.time()
+                                speak(speech_content, user_settings)
+                                update_voice_ready(_ts)
+                                last_obstacle_speak_time = current_time
+                                obstacle_alert_triggered = True
+                                last_obstacle_alert_time = current_time
+                                print(f"[语音提示] 人行道障碍物 - {speech_content}")
+                            except Exception as e:
+                                print(f"[语音提示] 人行道障碍物语音播放错误: {e}")
+                else:
+                    consecutive_obstacle_frames = 0
+                    consecutive_clear_frames += 1
 
-            # 暴力绘制
+            # === 暴力行为检测（最高优先级安全预警）===
             v_res = buf['violence']
             fight_detected = False
             fight_confidence = 0
+            fight_box = None  # 存储检测到的fight检测框
+            fight_distance = 0
+            fight_position = None
+            
             if v_res['boxes'] is not None:
                 for box in v_res['boxes']:
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
@@ -1279,7 +1441,12 @@ def combiner_worker():
                         color = (0, 255, 255)
                         label = f"FIGHT:{conf:.2f}"
                         fight_detected = True
-                        fight_confidence = max(fight_confidence, conf)
+                        if conf > fight_confidence:
+                            fight_confidence = conf
+                            fight_box = box
+                            # 计算距离和位置
+                            fight_distance = estimate_distance(box, frame.shape[0], frame.shape[1])
+                            fight_position = get_position_description(box, frame.shape[1])
                     else:
                         color = (0, 128, 255)
                         label = f"NOFIGHT:{conf:.2f}"
@@ -1294,14 +1461,20 @@ def combiner_worker():
                 if current_time - last_fight_urgent_time >= FIGHT_COOLDOWN:
                     try:
                         user_settings = get_user_settings_for_video()
-                        # 使用紧急提示，立即返回静态文本
-                        speech_content = get_smart_prompt(
-                            direction='fight',
-                            obstacles=[],
-                            position=None,
-                            urgency='urgent',
-                            user_settings=user_settings
-                        )
+                        
+                        # 生成包含位置和距离信息的安全警告
+                        if fight_position and fight_distance > 0:
+                            speech_content = f"注意，{fight_position}{fight_distance:.0f}米处可能有打斗，请注意避让"
+                        else:
+                            # 回退到原有提示
+                            speech_content = get_smart_prompt(
+                                direction='fight',
+                                obstacles=[],
+                                position=None,
+                                urgency='urgent',
+                                user_settings=user_settings
+                            )
+                        
                         current_speech_text = speech_content
                         # 设置音画同步状态（紧急模式，带时间戳）
                         set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
@@ -1319,7 +1492,7 @@ def combiner_worker():
             danger_cleared = False
             clear_type = None
             
-            # 检测打架消失
+            # 检测打架消失（必须之前确实检测到过打架）
             if was_fight_detected and not fight_detected:
                 danger_cleared = True
                 clear_type = 'fight'
@@ -1329,8 +1502,10 @@ def combiner_worker():
             # 条件1：之前确实播报过障碍物警示（obstacle_alert_triggered = True）
             # 条件2：连续至少 MIN_CLEAR_FRAMES 帧没有检测到盲道上的障碍物（避免闪烁误报）
             # 条件3：距离上次障碍物警示至少1秒（避免刚播报完障碍物立刻说"已通过"）
+            # 条件4：必须之前确实检测到过障碍物（last_obstacle_alert_time > 0）
             if (not danger_cleared and 
                 obstacle_alert_triggered and 
+                last_obstacle_alert_time > 0 and  # 确保之前确实播报过
                 consecutive_clear_frames >= MIN_CLEAR_FRAMES and
                 current_time - last_obstacle_alert_time >= 1.0):
                 danger_cleared = True
@@ -1339,7 +1514,8 @@ def combiner_worker():
                 print("[危险消失] 盲道上障碍物已通过（智能判断）")
             
             # 危险消失后，重新播报当前盲道方向
-            if danger_cleared and (current_time - last_danger_clear_time >= DANGER_CLEAR_COOLDOWN):
+            # 允许首次播报（last_danger_clear_time == 0）或满足冷却时间后播报
+            if danger_cleared and (last_danger_clear_time == 0 or (current_time - last_danger_clear_time >= DANGER_CLEAR_COOLDOWN)):
                 try:
                     user_settings = get_user_settings_for_video()
                     # 根据消失类型构建提示语
@@ -1442,9 +1618,11 @@ def combiner_worker():
                     except Exception as e:
                         print(f"[语音提示] 姿态语音播放错误: {e}")
             
-            # 更新上一帧的危险状态
+            # 更新上一帧的状态
             was_fight_detected = fight_detected
-            was_obstacle_detected = obstacle_detected_on_path  # 只追踪盲道上的障碍物
+            # 更新盲道检测状态（使用稳定检测结果）
+            if blind_road_stable_disappeared:
+                was_blind_road_detected = False
 
             # 送给显示线程（携带帧ID和时间戳用于音画同步）
             try:

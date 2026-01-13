@@ -7,8 +7,8 @@ import threading
 
 # 全局变量
 voices_cache = None
-# 语音播放队列和锁，用于避免多线程冲突
-speech_queue = queue.Queue()
+# 语音播放队列和锁，用于避免多线程冲突（限制长度防止堆积）
+speech_queue = queue.Queue(maxsize=3)
 speech_thread_started = False
 speech_lock = threading.Lock()
 
