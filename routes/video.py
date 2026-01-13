@@ -71,7 +71,7 @@ ROAD_SAFE_SPEAK_COOLDOWN = 10.0          # "道路安全"语音播报间隔10秒
 BLIND_ROAD_DISAPPEAR_TIMEOUT = 5.0      # 盲道消失超时5秒
 
 # 音画同步配置 - 语音预触发+画面延迟推送
-SPEECH_TRIGGERED_FRAME_DELAY = 1      # 触发语音时，画面延迟1秒推送（让语音先启动）
+SPEECH_TRIGGERED_FRAME_DELAY = 0      # 触发语音时，画面延迟1秒推送（让语音先启动）
 
 # 加载YOLO模型 - 使用相对路径
 # 获取项目根目录
@@ -1479,25 +1479,23 @@ def combiner_worker():
             if danger_cleared and (current_time - last_danger_clear_time >= DANGER_CLEAR_COOLDOWN):
                 try:
                     user_settings = get_user_settings_for_video()
-                    # 根据消失类型构建提示语
                     if clear_type == 'fight':
+                        # 仅对打架消失进行提示，障碍物消失不再播报"障碍物已通过"
                         prefix = "危险解除，"
+                        direction_prompt = get_blind_road_prompt(current_blind_direction)
+                        speech_content = prefix + direction_prompt
+                        current_speech_text = speech_content
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                        _ts = time.time()
+                        speak(speech_content, user_settings)
+                        update_voice_ready(_ts)
+                        # 重置方向去重，确保下次方向变化能正常触发
+                        last_direction = current_blind_direction
+                        print(f"[语音提示-危险消失] {speech_content}")
                     else:
-                        prefix = "障碍物已通过，"
-                    
-                    # 获取当前盲道方向提示
-                    direction_prompt = get_blind_road_prompt(current_blind_direction)
-                    speech_content = prefix + direction_prompt
-                    
-                    current_speech_text = speech_content
-                    set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
-                    _ts = time.time()
-                    speak(speech_content, user_settings)
-                    update_voice_ready(_ts)
+                        # 障碍物消失仅记录，不播报语音
+                        print("[危险消失] 盲道上障碍物已通过（不播报语音）")
                     last_danger_clear_time = current_time
-                    # 重置方向去重，确保下次方向变化能正常触发
-                    last_direction = current_blind_direction
-                    print(f"[语音提示-危险消失] {speech_content}")
                 except Exception as e:
                     print(f"[语音提示] 危险消失提示错误: {e}")
             
