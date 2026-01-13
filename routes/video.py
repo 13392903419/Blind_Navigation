@@ -69,7 +69,7 @@ ENV_SPEAK_COOLDOWN = 5.0                # 相同语音播报冷却5秒
 ROAD_SAFE_SPEAK_COOLDOWN = 10.0          # "道路安全"语音播报间隔10秒
 
 # 模型1（Blind Road）盲道检测配置  
-BLIND_ROAD_DISAPPEAR_TIMEOUT = 5.0      # 盲道消失超时5秒
+BLIND_ROAD_DISAPPEAR_TIMEOUT = 0      # 盲道消失超时5秒
 
 # 音画同步配置 - 语音预触发+画面延迟推送
 SPEECH_TRIGGERED_FRAME_DELAY = 0      # 触发语音时，画面延迟1秒推送（让语音先启动）
@@ -1061,7 +1061,9 @@ def combiner_worker():
     blind_road_last_seen_time = 0       # 上次看到盲道的时间
     blind_road_disappear_announced = False  # 是否已播报过"盲道消失"
     consecutive_blind_road_frames = 0   # 连续检测到盲道的帧数
+    consecutive_blind_road_missing_frames = 0  # 连续未检测到盲道的帧数
     MIN_BLIND_ROAD_FRAMES = 5           # 至少连续5帧检测到盲道才播报
+    MIN_BLIND_ROAD_MISSING_FRAMES = 10  # 连续未检测到盲道的帧数阈值（用于播报盲道消失）
     
     # === 危险状态追踪 ===
     was_fight_detected = False
@@ -1125,6 +1127,7 @@ def combiner_worker():
             frame = buf['frame']
             current_time = time.time()
             speech_triggered_this_frame = False  # 标记本帧是否触发语音（用于延迟推送）
+            blind_event_this_frame = False       # 标记本帧是否有盲道相关播报，用于压制道路安全播报
             
             # 获取帧捕获时间戳（从任意模型结果中提取，用于音画对齐）
             capture_ts = buf['blind_road'].get('capture_ts', current_time)
@@ -1150,6 +1153,7 @@ def combiner_worker():
                 blind_road_last_seen_time = current_time
                 blind_road_disappear_announced = False  # 重置消失播报标志
                 consecutive_blind_road_frames += 1  # 连续帧计数+1
+                consecutive_blind_road_missing_frames = 0  # 重置未检测计数
                 
                 # 计算盲道方向
                 centers = []
@@ -1184,15 +1188,21 @@ def combiner_worker():
                         speak(speech_content, user_settings)
                         blind_road_appeared = True
                         speech_triggered_this_frame = True  # 标记已触发语音
+                        blind_event_this_frame = True
                         print(f"[语音提示] 模型1 - {speech_content} (连续{consecutive_blind_road_frames}帧)")
                     except Exception as e:
                         print(f"[语音提示] 盲道出现播报错误: {e}")
             else:
                 # 盲道未检测到：重置连续帧计数器
                 consecutive_blind_road_frames = 0
+                consecutive_blind_road_missing_frames += 1
                 # 检查是否超过5秒
                 if blind_road_appeared and not blind_road_disappear_announced:
-                    if blind_road_last_seen_time > 0 and (current_time - blind_road_last_seen_time) >= BLIND_ROAD_DISAPPEAR_TIMEOUT:
+                    if (
+                        blind_road_last_seen_time > 0
+                        and consecutive_blind_road_missing_frames >= MIN_BLIND_ROAD_MISSING_FRAMES
+                        and (current_time - blind_road_last_seen_time) >= BLIND_ROAD_DISAPPEAR_TIMEOUT
+                    ):
                         try:
                             user_settings = get_user_settings_for_video()
                             speech_content = "盲道消失"
@@ -1202,6 +1212,7 @@ def combiner_worker():
                             blind_road_disappear_announced = True
                             blind_road_appeared = False  # 重置，下次出现可以再播报
                             speech_triggered_this_frame = True  # 标记已触发语音
+                            blind_event_this_frame = True
                             print(f"[语音提示] 模型1 - {speech_content}")
                         except Exception as e:
                             print(f"[语音提示] 盲道消失播报错误: {e}")
@@ -1209,7 +1220,7 @@ def combiner_worker():
             # 环境感知绘制
             e_res = buf['environment']
             obstacle_detected_on_path = False  # 仅记录盲道上的障碍物用于语音
-            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度, 类型)
+            obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度, 类型, 估计距离)
             environment_counts = Counter()  # 统计当前帧环境模型各类别出现次数（过滤小框后）
             environment_area_sum = Counter()  # 统计各类别框面积总和（用于选主导环境）
             frame_h, frame_w = frame.shape[:2]
@@ -1232,6 +1243,18 @@ def combiner_worker():
             }
             # 需要提示的障碍物类别（排除road和sidewalk，这些不是障碍）
             ALERT_CLASSES = {0, 1, 2}  # automobile, obstacle, person
+
+            def estimate_distance_by_ratio(ratio: float):
+                """根据检测框面积占比粗估距离（米）"""
+                if ratio >= 0.15:
+                    return 0.5
+                if ratio >= 0.08:
+                    return 1.0
+                if ratio >= 0.04:
+                    return 2.0
+                if ratio >= 0.02:
+                    return 3.0
+                return None
 
             # 计算盲道水平范围，用于过滤盲道以外的障碍物（如两侧树木）
             blind_lane_range = None
@@ -1287,7 +1310,8 @@ def combiner_worker():
                         on_blind_lane = blind_lane_range[0] <= box_center_x <= blind_lane_range[1]
                     # 盲道障碍警示也过滤特别小的框，避免远处小目标触发播报
                     if cls in ALERT_CLASSES and on_blind_lane and box_area_ratio >= ENV_ALERT_MIN_BOX_AREA_RATIO:
-                        obstacle_positions.append((position, conf, cls_name))
+                        est_distance = estimate_distance_by_ratio(box_area_ratio)
+                        obstacle_positions.append((position, conf, cls_name, est_distance))
                         obstacle_detected_on_path = True
 
                     # 绘制检测框
@@ -1303,6 +1327,7 @@ def combiner_worker():
 
             # === 模型2：环境检测语音播报（占比>20%才播报，相同语音间隔5秒）===
             if environment_area_sum:
+                road_safe_blocked = False  # 盲道缺失也允许道路安全播报
                 for cls_name, total_area in environment_area_sum.items():
                     area_ratio = total_area / frame_area if frame_area else 0
                     if area_ratio >= ENV_DOMINANT_AREA_RATIO:
@@ -1324,7 +1349,7 @@ def combiner_worker():
                                 can_speak = True
                                 last_obstacle_speak_time_env = current_time
                         elif cls_name in ('road', 'sidewalk'):
-                            if current_time - last_road_speak_time >= ROAD_SAFE_SPEAK_COOLDOWN:
+                            if (not road_safe_blocked) and current_time - last_road_speak_time >= ROAD_SAFE_SPEAK_COOLDOWN:
                                 speech_content = "道路安全"
                                 can_speak = True
                                 last_road_speak_time = current_time
@@ -1360,6 +1385,7 @@ def combiner_worker():
                         # 获取最高置信度障碍物的类型
                         obstacle_types = [best_obstacle[2]]  # 使用实际检测到的类型
                         position = best_obstacle[0]  # 位置：左侧/右侧/前方
+                        distance_m = best_obstacle[3]
                         # 将中文位置映射为英文key
                         pos_map = {'左侧': 'left', '右侧': 'right', '前方': 'front'}
                         pos_key = pos_map.get(position, 'front')
@@ -1369,14 +1395,13 @@ def combiner_worker():
                         if check_obstacle_change(obstacle_key):
                             try:
                                 user_settings = get_user_settings_for_video()
-                                # 使用混合架构生成语音（多障碍物时可触发大模型）
-                                speech_content = get_smart_prompt(
-                                    direction='straight',
-                                    obstacles=obstacle_types,
-                                    position=pos_key,
-                                    urgency='normal',
-                                    user_settings=user_settings
-                                )
+                                # 障碍物距离播报（简单距离估算）
+                                label_cn = ENV_CLASS_TEXT.get(obstacle_types[0], '障碍物')
+                                if distance_m:
+                                    distance_phrase = f"{distance_m:.1f}米处"
+                                else:
+                                    distance_phrase = "" if position == "前方" else "附近"
+                                speech_content = f"小心，{position}{distance_phrase}有{label_cn}"
                                 current_speech_text = speech_content
                                 # 设置音画同步状态（带时间戳对齐）
                                 set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
