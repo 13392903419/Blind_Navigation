@@ -1081,6 +1081,10 @@ def combiner_worker():
     consecutive_violence_frames = 0     # 连续检测到fight的帧数
     MIN_VIOLENCE_FRAMES = 5             # 至少连续5帧检测到fight才触发
 
+    # === 模型3暴力“解除”连续帧追踪 ===
+    consecutive_fight_clear_frames = 0  # 连续未检测到fight的帧数（用于危险解除）
+    MIN_FIGHT_CLEAR_FRAMES = 1         # 至少连续1帧未检测到fight才播报“危险解除”（避免闪烁）
+
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
         global voice_latency_avg, last_speech_ready_time
@@ -1434,6 +1438,15 @@ def combiner_worker():
             # 只有连续多帧检测到fight才认为真的有冲突
             violence_fight_detected = consecutive_violence_frames >= MIN_VIOLENCE_FRAMES
 
+            # 更新fight“解除”连续帧计数：只有在曾经检测到fight后，才开始累积未检测到的帧数
+            if violence_fight_detected:
+                consecutive_fight_clear_frames = 0
+            else:
+                if was_fight_detected or consecutive_fight_clear_frames > 0:
+                    consecutive_fight_clear_frames += 1
+                else:
+                    consecutive_fight_clear_frames = 0
+
 
             # === 模型3语音播报：暴力/冲突检测 ===
             # 判断优先级：面积>5% -> 连续10帧 -> 置信度>0.5
@@ -1458,9 +1471,13 @@ def combiner_worker():
             
             # 检测打架消失
             if was_fight_detected and not violence_fight_detected:
-                danger_cleared = True
-                clear_type = 'fight'
-                print("[危险消失] 打架行为已消失")
+                # 需要连续多帧都未再出现fight才认为真正解除
+                if consecutive_fight_clear_frames >= MIN_FIGHT_CLEAR_FRAMES:
+                    danger_cleared = True
+                    clear_type = 'fight'
+                    print(f"[危险消失] 打架行为已消失（连续{consecutive_fight_clear_frames}帧未检出）")
+                else:
+                    print(f"[危险消失] 打架疑似消失，等待确认（连续{consecutive_fight_clear_frames}/{MIN_FIGHT_CLEAR_FRAMES}帧未检出）")
             
             # 检测盲道上的障碍物消失（智能判断）
             # 条件1：之前确实播报过障碍物警示（obstacle_alert_triggered = True）
@@ -1485,10 +1502,12 @@ def combiner_worker():
                         direction_prompt = get_blind_road_prompt(current_blind_direction)
                         speech_content = prefix + direction_prompt
                         current_speech_text = speech_content
-                        set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                        # 提升优先级：危险解除也用紧急播报，压过“道路安全”等普通语音
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
                         _ts = time.time()
-                        speak(speech_content, user_settings)
+                        speak_urgent(speech_content, user_settings)
                         update_voice_ready(_ts)
+                        speech_triggered_this_frame = True  # 标记已触发语音（用于延迟推送该帧）
                         # 重置方向去重，确保下次方向变化能正常触发
                         last_direction = current_blind_direction
                         print(f"[语音提示-危险消失] {speech_content}")
