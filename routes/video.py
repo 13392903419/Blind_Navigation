@@ -33,7 +33,6 @@ from PIL import Image, ImageDraw, ImageFont
 from utils.decorators import login_required
 from utils.video_utils import allowed_file, create_error_frame, create_info_frame
 from utils.voice_utils import speak, speak_urgent, get_prompt_template, set_speech_complete_callback
-from utils.pose_utils import init_mediapipe, analyze_frame as analyze_pose, draw_pose_analysis, get_pose_voice_prompt
 from config import MODEL_WEIGHTS, UPLOAD_FOLDER, THRESHOLD_SLOPE, CALL_INTERVAL
 
 # ========== 中文绘制支持 ==========
@@ -58,12 +57,18 @@ def put_chinese_text(img, text, position, color=(0, 255, 0), font_size=20):
     draw.text(position, text, font=font, fill=rgb_color)
     return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
 
-# 初始化 MediaPipe（在模块加载时尝试初始化）
-MEDIAPIPE_ENABLED = init_mediapipe()
-if MEDIAPIPE_ENABLED:
-    print("[模块加载] ✓ MediaPipe 姿态分析已启用")
-else:
-    print("[模块加载] ⚠ MediaPipe 未启用（可能未安装）")
+# 模型3（暴力/冲突检测）配置
+FIGHT_CONFIDENCE_THRESHOLD = 0.50       # 模型3置信度阈值>0.5触发
+FIGHT_MIN_AREA_RATIO = 0.05             # fight框面积至少占画面>5%才认为有效
+FIGHT_SPEAK_COOLDOWN = 5.0              # 模型3冲突检测语音冷却5秒
+
+# 模型2（Environment）环境检测配置
+ENV_DOMINANT_AREA_RATIO = 0.30          # 主导占比阈值>20%画面才播报
+ENV_SPEAK_COOLDOWN = 5.0                # 相同语音播报冷却5秒
+ROAD_SAFE_SPEAK_COOLDOWN = 10.0          # "道路安全"语音播报间隔10秒
+
+# 模型1（Blind Road）盲道检测配置  
+BLIND_ROAD_DISAPPEAR_TIMEOUT = 5.0      # 盲道消失超时5秒
 
 # 加载YOLO模型 - 使用相对路径
 # 获取项目根目录
@@ -246,7 +251,7 @@ speech_sync_state = {
 speech_sync_lock = threading.Lock()
 
 # === 时间戳对齐配置 ===
-SYNC_BUFFER_DELAY = 0.3       # 帧缓冲延迟（秒）- 给语音准备留出时间
+SYNC_BUFFER_DELAY = 0.5       # 帧缓冲延迟（秒）- 给语音准备留出时间
 SYNC_MAX_BUFFER_SIZE = 10     # 最大缓冲帧数
 SYNC_ENABLED = True           # 是否启用时间戳对齐
 
@@ -259,6 +264,8 @@ last_speech_time = 0  # 最后一次语音播报的时间
 last_fight_urgent_time = 0  # 最后一次fight紧急播报的时间
 last_direction = None  # 最后一次播报的方向（用于去重）
 last_obstacle_type = None  # 最后一次播报的障碍物类型（用于去重）
+last_environment_summary = ""  # 模型二：最近一次播报的环境摘要
+last_environment_speak_time = 0  # 模型二：最近一次环境摘要播报时间
 # 音画对齐基准延迟（秒），动态自适应时作为下限
 ALIGN_BASE_DELAY = 0.4
 voice_latency_avg = 0.4  # 语音生成/入队平均耗时估计（秒）
@@ -270,9 +277,17 @@ LLM_TIMEOUT = 0.8            # 大模型超时时间（秒）
 LLM_CACHE_SIZE = 100         # 缓存大小
 LLM_MIN_OBSTACLES = 2        # 触发大模型的最小障碍物数量
 
+# === 模型二（环境感知）播报策略 ===
+# 只播报“占据画面最大的主导环境”，过滤远处小框（如远处车辆）
+# 说明：面积阈值使用 box_area / frame_area，数值越大越严格
+ENV_SUMMARY_MIN_BOX_AREA_RATIO = 0.05   # 环境摘要：只统计面积占比>=5%的框
+ENV_ALERT_MIN_BOX_AREA_RATIO = 0.02     # 盲道障碍警示：面积占比>=2%才认为“值得播报”
+ENV_SUMMARY_MIN_DOMINANT_RATIO = 0.50   # 主导环境占比>=50% 才播报（否则认为不是主导）
+ENV_SUMMARY_SECOND_RATIO = 0.75         # 第二主导类别面积>=第一*0.75 时可一起播报
+
 import random
 import concurrent.futures
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 random.seed()
 
 # 静态提示词库（高频/紧急场景，零延迟）
@@ -631,34 +646,22 @@ def push_pose_inference(in_q):
         fid = item.get('fid', 0)
         capture_ts = item.get('capture_ts', time.time())  # 获取捕获时间戳
         
-        # 受控抽帧：每隔一帧推理一次
-        do_infer = (fid % INFER_EVERY_N == 0) or (last_pose_result is None)
+        # MediaPipe已禁用，不进行姿态分析
+        pose_result = {
+            'detected': False,
+            'pose_results': None,
+            'orientation': None,
+            'abnormality': None,
+            'alert_level': 0,
+            'alert_message': '',
+            'latency_ms': 0
+        }
+        latency = 0
         
-        if do_infer and MEDIAPIPE_ENABLED:
-            # 执行姿态分析
-            pose_result = analyze_pose(frame)
-            latency = pose_result.get('latency_ms', 0)
-            last_pose_result = pose_result
-        else:
-            # 复用上次结果
-            pose_result = last_pose_result if last_pose_result else {
-                'detected': False,
-                'pose_results': None,
-                'orientation': None,
-                'abnormality': None,
-                'alert_level': 0,
-                'alert_message': '',
-                'latency_ms': 0
-            }
-            latency = 0
-        
-        # 为显示队列生成已绘制帧
-        if MEDIAPIPE_ENABLED and pose_result.get('detected'):
-            annotated = draw_pose_analysis(frame.copy(), pose_result, draw_skeleton=True)
-        else:
-            annotated = frame.copy()
-            cv2.putText(annotated, "Pose: No Detection", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
+        # 不绘制姿态分析
+        annotated = frame.copy()
+        cv2.putText(annotated, "Pose: Disabled", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
         
         # FPS 计算
         fps_buf.append(time.time())
@@ -1006,36 +1009,51 @@ def combiner_worker():
     """
     收集四模型结果（盲道+环境+暴力+姿态），同帧绘制后写入 result_queue
     并根据检测结果输出相应的语音提示
+    
+    语音播报逻辑：
+    - 模型3（暴力）：置信度>0.6 → "前方有冲突"（最高优先级，语速加快）
+    - 模型2（环境）：占比>20% → 按类别播报（automobile/person/obstacle/road+sidewalk）
+    - 模型1（盲道）：出现→"盲道出现"；消失5秒→"盲道消失"
+    - 盲道上障碍物：调用模型2、3的输出
     """
     global last_fight_speak_time, last_obstacle_speak_time, last_blind_road_speak_time, current_speech_text
     global last_direction, last_obstacle_type, last_speech_time, last_speech_ready_time, voice_latency_avg
-    global last_fight_urgent_time  # fight紧急播报专用时间戳
+    global last_fight_urgent_time, last_environment_summary, last_environment_speak_time
 
-    # 各类型的提示间隔（秒）
-    FIGHT_SPEAK_INTERVAL = 2.0
-    OBSTACLE_SPEAK_INTERVAL = 2.0
-    BLIND_ROAD_SPEAK_INTERVAL = 2.0
-    POSE_SPEAK_INTERVAL = 3.0  # 姿态提示间隔（秒）
+    # === 模型3（暴力）打斗检测状态 ===
+    last_fight_speak_time_v3 = 0        # 上次打斗播报时间
     
-    # === 危险状态追踪（用于危险消失后重新提示盲道方向）===
-    was_fight_detected = False      # 上一帧是否检测到打架
-    was_obstacle_detected = False   # 上一帧是否检测到盲道上的障碍物
-    current_blind_direction = 'straight'  # 当前盲道方向（用于危险消失后重新提示）
-    DANGER_CLEAR_COOLDOWN = 3.0     # 危险消失后的提示冷却时间（秒）- 增加到3秒减少频繁播报
-    last_danger_clear_time = 0      # 上次危险消失提示的时间
+    # === 模型2（环境）各类别播报状态 ===
+    last_automobile_speak_time = 0      # 上次车辆播报时间
+    last_person_speak_time = 0          # 上次行人播报时间
+    last_obstacle_speak_time_env = 0    # 上次障碍播报时间
+    last_road_speak_time = 0            # 上次道路安全播报时间
     
-    # === 智能播报状态追踪 ===
-    obstacle_alert_triggered = False   # 是否已经对当前障碍物播报过（用于判断是否需要播报"已通过"）
-    last_obstacle_alert_time = 0       # 上次障碍物警示播报的时间
-    consecutive_obstacle_frames = 0    # 连续检测到盲道上障碍物的帧数
-    consecutive_clear_frames = 0       # 连续没有检测到盲道上障碍物的帧数
-    MIN_OBSTACLE_FRAMES = 3            # 至少连续N帧检测到障碍物才播报（避免误检）
-    MIN_CLEAR_FRAMES = 5               # 至少连续N帧没有障碍物才播报"已通过"（避免闪烁）
+    # === 模型1（盲道）状态追踪 ===
+    blind_road_appeared = False         # 盲道是否已出现过（用于只播报一次"盲道出现"）
+    blind_road_last_seen_time = 0       # 上次看到盲道的时间
+    blind_road_disappear_announced = False  # 是否已播报过"盲道消失"
+    consecutive_blind_road_frames = 0   # 连续检测到盲道的帧数
+    MIN_BLIND_ROAD_FRAMES = 5           # 至少连续5帧检测到盲道才播报
     
-    # === MediaPipe 姿态分析状态追踪 ===
-    last_pose_speak_time = 0           # 上次姿态提示的时间
-    consecutive_pose_alert_frames = 0  # 连续检测到异常姿态的帧数
-    MIN_POSE_ALERT_FRAMES = 5          # 至少连续N帧检测到异常才播报
+    # === 危险状态追踪 ===
+    was_fight_detected = False
+    was_obstacle_detected = False
+    current_blind_direction = 'straight'
+    DANGER_CLEAR_COOLDOWN = 3.0
+    last_danger_clear_time = 0
+    
+    # === 盲道上障碍物追踪 ===
+    obstacle_alert_triggered = False
+    last_obstacle_alert_time = 0
+    consecutive_obstacle_frames = 0
+    consecutive_clear_frames = 0
+    MIN_OBSTACLE_FRAMES = 3
+    MIN_CLEAR_FRAMES = 5
+    
+    # === 模型3暴力检测连续帧追踪 ===
+    consecutive_violence_frames = 0     # 连续检测到fight的帧数
+    MIN_VIOLENCE_FRAMES = 5             # 至少连续5帧检测到fight才触发
 
     def update_voice_ready(start_ts: float):
         """更新语音耗时估计与预计就绪时间"""
@@ -1044,11 +1062,12 @@ def combiner_worker():
         voice_latency_avg = 0.7 * voice_latency_avg + 0.3 * duration
         last_speech_ready_time = time.time() + max(ALIGN_BASE_DELAY, voice_latency_avg)
 
-    # 确定需要等待的模型列表（根据 MediaPipe 是否启用）
-    required_models = ['blind_road', 'environment', 'violence']
-    if MEDIAPIPE_ENABLED:
-        required_models.append('pose')
+    # 主流程只等待关键结果到齐（盲道+环境），其它模型只作为“可选叠加/可选语音来源”
+    # 目的：避免任何一个子模型异常/慢导致整个管道秒退或卡死。
+    required_models = ['blind_road', 'environment']
 
+    # 记录最近一次结果用于主画面叠加与语音判断（不要求与 fid 严格对齐，保证稳定）
+    latest_violence_packet = None
     while thread_control['running']:
         try:
             res = combined_queue.get(timeout=1.0)
@@ -1059,6 +1078,12 @@ def combiner_worker():
             continue
 
         fid = res['fid']
+
+        # violence 结果仅用于叠加与语音：不写入 combine_buffer（避免缓存堆积导致卡死/秒退）
+        if res.get('tag') == 'violence':
+            latest_violence_packet = res
+            continue
+
         buf = combine_buffer[fid]
         buf.setdefault('frame', res['frame'])
         buf[res['tag']] = res
@@ -1085,9 +1110,15 @@ def combiner_worker():
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0),2)
                 blind_detected = True
 
-            # 检测到盲道且置信度高于0.5时，触发语音提示
+            # === 模型1：盲道检测语音播报 ===
+            # 规则：连续5帧检测到盲道→"盲道出现"（只播一次）；超过5秒未检测到→"盲道消失"
             if blind_detected and blind_confidences and max(blind_confidences) > 0.5:
-                # 计算盲道方向：基于检测框中心点拟合斜率
+                # 更新最后看到盲道的时间
+                blind_road_last_seen_time = current_time
+                blind_road_disappear_announced = False  # 重置消失播报标志
+                consecutive_blind_road_frames += 1  # 连续帧计数+1
+                
+                # 计算盲道方向
                 centers = []
                 for box in b_res['boxes']:
                     bx1, by1, bx2, by2 = box.xyxy[0].cpu().numpy().astype(int)
@@ -1095,53 +1126,60 @@ def combiner_worker():
                     center_y = (by1 + by2) / 2
                     centers.append((center_x, center_y))
                 
-                # 根据检测框数量和斜率判断方向
-                detected_direction = 'straight'  # 默认直行
+                detected_direction = 'straight'
                 if len(centers) >= 2:
-                    # 使用线性拟合计算斜率：y坐标作为自变量，x坐标作为因变量
                     ys = np.array([c[1] for c in centers])
                     xs = np.array([c[0] for c in centers])
                     try:
                         slope, _ = np.polyfit(ys, xs, 1)
-                        # 斜率阈值判断（使用config中的THRESHOLD_SLOPE）
                         if slope < -THRESHOLD_SLOPE:
                             detected_direction = 'left'
-                            print(f"[盲道方向] 检测到左转，斜率: {slope:.3f}")
                         elif slope > THRESHOLD_SLOPE:
                             detected_direction = 'right'
-                            print(f"[盲道方向] 检测到右转，斜率: {slope:.3f}")
-                        else:
-                            print(f"[盲道方向] 直行，斜率: {slope:.3f}")
-                    except Exception as e:
-                        print(f"[盲道方向] 斜率计算失败: {e}")
+                    except:
+                        pass
                 
-                # 保存当前盲道方向（用于危险消失后重新提示）
                 current_blind_direction = detected_direction
                 
-                if should_speak_now(current_time):
-                    if check_direction_change(detected_direction):
+                # 盲道首次出现且连续5帧，播报"盲道出现"（只播一次）
+                if not blind_road_appeared and consecutive_blind_road_frames >= MIN_BLIND_ROAD_FRAMES:
+                    try:
+                        user_settings = get_user_settings_for_video()
+                        speech_content = "盲道出现"
+                        current_speech_text = speech_content
+                        set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                        speak(speech_content, user_settings)
+                        blind_road_appeared = True
+                        print(f"[语音提示] 模型1 - {speech_content} (连续{consecutive_blind_road_frames}帧)")
+                    except Exception as e:
+                        print(f"[语音提示] 盲道出现播报错误: {e}")
+            else:
+                # 盲道未检测到：重置连续帧计数器
+                consecutive_blind_road_frames = 0
+                # 检查是否超过5秒
+                if blind_road_appeared and not blind_road_disappear_announced:
+                    if blind_road_last_seen_time > 0 and (current_time - blind_road_last_seen_time) >= BLIND_ROAD_DISAPPEAR_TIMEOUT:
                         try:
                             user_settings = get_user_settings_for_video()
-                            speech_content = get_blind_road_prompt(detected_direction)
-                            # 30% 概率添加鼓励词
-                            encouragement = get_encouragement_prompt()
-                            if encouragement:
-                                speech_content += "，" + encouragement
+                            speech_content = "盲道消失"
                             current_speech_text = speech_content
-                            # 设置音画同步状态（带时间戳善对齐）
                             set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
-                            _ts = time.time()
                             speak(speech_content, user_settings)
-                            update_voice_ready(_ts)
-                            print(f"[语音提示] 盲道检测 - {speech_content}")
+                            blind_road_disappear_announced = True
+                            blind_road_appeared = False  # 重置，下次出现可以再播报
+                            print(f"[语音提示] 模型1 - {speech_content}")
                         except Exception as e:
-                            print(f"[语音提示] 盲道语音播放错误: {e}")
-                    last_blind_road_speak_time = current_time
+                            print(f"[语音提示] 盲道消失播报错误: {e}")
 
             # 环境感知绘制
             e_res = buf['environment']
             obstacle_detected_on_path = False  # 仅记录盲道上的障碍物用于语音
             obstacle_positions = []  # 记录障碍物位置信息 (位置, 置信度, 类型)
+            environment_counts = Counter()  # 统计当前帧环境模型各类别出现次数（过滤小框后）
+            environment_area_sum = Counter()  # 统计各类别框面积总和（用于选主导环境）
+            frame_h, frame_w = frame.shape[:2]
+            frame_area = max(1, frame_h * frame_w)
+            near_person_count = 0  # 用于“冲突动作”上下文：近距离多人（依赖环境模型 person 框）
             # 环境感知模型类别映射: 0:Automobile 1:Obstacle 2:Person 3:Road 4:Sidewalk
             ENV_CLASS_MAP = {
                 0: 'automobile',
@@ -1149,6 +1187,13 @@ def combiner_worker():
                 2: 'person',
                 3: 'road',
                 4: 'sidewalk'
+            }
+            ENV_CLASS_TEXT = {
+                'automobile': '车辆',
+                'obstacle': '障碍物',
+                'person': '行人',
+                'road': '道路',
+                'sidewalk': '人行道'
             }
             # 需要提示的障碍物类别（排除road和sidewalk，这些不是障碍）
             ALERT_CLASSES = {0, 1, 2}  # automobile, obstacle, person
@@ -1173,24 +1218,40 @@ def combiner_worker():
                     conf = float(box.conf[0])
                     cls = int(box.cls[0])
 
+                    # box面积占比：用于过滤远处小目标（小框）
+                    box_w = max(1, x2 - x1)
+                    box_h = max(1, y2 - y1)
+                    box_area = box_w * box_h
+                    box_area_ratio = box_area / frame_area
+
                     # 计算障碍物在图像中的位置（左、中、右）
+                    # 前方占3/5画面，左右各占1/5
                     img_width = frame.shape[1]
                     box_center_x = (x1 + x2) / 2
-                    if box_center_x < img_width / 3:
+                    if box_center_x < img_width * 0.2:
                         position = "左侧"
-                    elif box_center_x > 2 * img_width / 3:
+                    elif box_center_x > img_width * 0.8:
                         position = "右侧"
                     else:
                         position = "前方"
 
                     # 获取类别名称
                     cls_name = ENV_CLASS_MAP.get(cls, 'obstacle')
+
+                    # 统计“近距离多人”：用 person 框面积过滤远处小人
+                    if cls == 2 and box_area_ratio >= 0.03:  # person框占画面>=3%认为较近
+                        near_person_count += 1
+                    # 环境摘要只统计“足够大”的框，避免远处小车等干扰
+                    if box_area_ratio >= ENV_SUMMARY_MIN_BOX_AREA_RATIO:
+                        environment_counts[cls_name] += 1
+                        environment_area_sum[cls_name] += box_area
                     
                     # 只有需要警示的类别且位于盲道范围内才记录
                     on_blind_lane = False
                     if blind_lane_range:
                         on_blind_lane = blind_lane_range[0] <= box_center_x <= blind_lane_range[1]
-                    if cls in ALERT_CLASSES and on_blind_lane:
+                    # 盲道障碍警示也过滤特别小的框，避免远处小目标触发播报
+                    if cls in ALERT_CLASSES and on_blind_lane and box_area_ratio >= ENV_ALERT_MIN_BOX_AREA_RATIO:
                         obstacle_positions.append((position, conf, cls_name))
                         obstacle_detected_on_path = True
 
@@ -1204,6 +1265,43 @@ def combiner_worker():
                     cv2.rectangle(frame,(x1,y1),(x2,y2),color,2)
                     cv2.putText(frame,f"{label}:{conf:.2f}",(x1,y1-5),
                                 cv2.FONT_HERSHEY_SIMPLEX,0.5,color,2)
+
+            # === 模型2：环境检测语音播报（占比>20%才播报，相同语音间隔5秒）===
+            if environment_area_sum:
+                for cls_name, total_area in environment_area_sum.items():
+                    area_ratio = total_area / frame_area if frame_area else 0
+                    if area_ratio >= ENV_DOMINANT_AREA_RATIO:
+                        speech_content = None
+                        can_speak = False
+                        if cls_name == 'automobile':
+                            if current_time - last_automobile_speak_time >= ENV_SPEAK_COOLDOWN:
+                                speech_content = "小心，当前车流量大"
+                                can_speak = True
+                                last_automobile_speak_time = current_time
+                        elif cls_name == 'person':
+                            if current_time - last_person_speak_time >= ENV_SPEAK_COOLDOWN:
+                                speech_content = "小心有人"
+                                can_speak = True
+                                last_person_speak_time = current_time
+                        elif cls_name == 'obstacle':
+                            if current_time - last_obstacle_speak_time_env >= ENV_SPEAK_COOLDOWN:
+                                speech_content = "小心，有障碍"
+                                can_speak = True
+                                last_obstacle_speak_time_env = current_time
+                        elif cls_name in ('road', 'sidewalk'):
+                            if current_time - last_road_speak_time >= ROAD_SAFE_SPEAK_COOLDOWN:
+                                speech_content = "道路安全"
+                                can_speak = True
+                                last_road_speak_time = current_time
+                        if can_speak and speech_content:
+                            try:
+                                user_settings = get_user_settings_for_video()
+                                current_speech_text = speech_content
+                                set_speech_sync_state(fid, frame, speech_content, is_urgent=False, capture_ts=capture_ts)
+                                speak(speech_content, user_settings)
+                                print(f"[语音提示] 模型2环境检测 - {speech_content}")
+                            except Exception as e:
+                                print(f"[语音提示] 环境播报错误: {e}")
 
             # === 智能障碍物播报逻辑 ===
             # 只有盲道范围内的障碍物才影响行走，盲道外的障碍物（如两侧的树）不触发语音
@@ -1257,70 +1355,77 @@ def combiner_worker():
                             except Exception as e:
                                 print(f"[语音提示] 障碍物语音播放错误: {e}")
 
-            # 暴力绘制
-            v_res = buf['violence']
-            fight_detected = False
-            fight_confidence = 0
-            if v_res['boxes'] is not None:
-                for box in v_res['boxes']:
+            # === 模型3：暴力/冲突检测（使用violence模型）===
+            # 判断优先级：面积>帧数>置信度
+            v_pkt = latest_violence_packet
+            violence_fight_detected_current = False  # 当前帧是否检测到fight
+            violence_fight_confidence = 0
+            violence_fight_area_ratio = 0  # fight框面积占比
+            
+            if v_pkt and v_pkt.get('boxes') is not None:
+                for box in v_pkt['boxes']:
                     x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
-                    # 优先使用 names 判断；若 names 缺失/为空则回退到 cls_id 规则
-                    name_map = v_res.get('names', {})
+                    name_map = v_pkt.get('names', {}) or {}
                     cls_name = (name_map.get(cls_id, '') or '').lower()
-                    if cls_name:
-                        is_fight = (cls_name == 'fight')
-                    else:
-                        # 回退：按 cls_id=1 视为 fight（与测试模块一致时再保留）
-                        is_fight = (cls_id == 1)
+                    is_fight = (cls_name == 'fight') if cls_name else (cls_id == 1)
 
                     if is_fight:
-                        color = (0, 255, 255)
-                        label = f"FIGHT:{conf:.2f}"
-                        fight_detected = True
-                        fight_confidence = max(fight_confidence, conf)
+                        # 计算fight框面积占比
+                        box_w = max(1, x2 - x1)
+                        box_h = max(1, y2 - y1)
+                        box_area = box_w * box_h
+                        area_ratio = box_area / frame_area if frame_area else 0
+                        
+                        # 优先级判断：1.面积>5% -> 2.置信度>0.5
+                        if area_ratio >= FIGHT_MIN_AREA_RATIO and conf > FIGHT_CONFIDENCE_THRESHOLD:
+                            color = (0, 255, 255)  # 黄色：有效fight
+                            label = f"FIGHT:{conf:.2f}({area_ratio*100:.1f}%)"
+                            violence_fight_detected_current = True
+                            violence_fight_confidence = max(violence_fight_confidence, conf)
+                            violence_fight_area_ratio = max(violence_fight_area_ratio, area_ratio)
+                        else:
+                            color = (0, 165, 255)  # 橙色：面积或置信度不足
+                            label = f"fight:{conf:.2f}({area_ratio*100:.1f}%)"
                     else:
                         color = (0, 128, 255)
                         label = f"NOFIGHT:{conf:.2f}"
                     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3)
                     cv2.putText(frame, label, (x1, y1 - 5),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            
+            # 更新连续帧计数
+            if violence_fight_detected_current:
+                consecutive_violence_frames += 1
+            else:
+                consecutive_violence_frames = 0
+            
+            # 只有连续多帧检测到fight才认为真的有冲突
+            violence_fight_detected = consecutive_violence_frames >= MIN_VIOLENCE_FRAMES
 
-            # 检测到fight行为且置信度高于0.5时，立即触发紧急语音提示
-            # 【最高优先级】使用更短的冷却时间(1秒)，跳过去重检查，清空队列后立即播报
-            if fight_detected and fight_confidence > 0.5:
-                # 使用专用的fight冷却时间（1秒），比普通播报更短
-                if current_time - last_fight_urgent_time >= FIGHT_COOLDOWN:
+
+            # === 模型3语音播报：暴力/冲突检测 ===
+            # 判断优先级：面积>5% -> 连续10帧 -> 置信度>0.5
+            if violence_fight_detected:
+                if current_time - last_fight_speak_time_v3 >= FIGHT_SPEAK_COOLDOWN:
                     try:
                         user_settings = get_user_settings_for_video()
-                        # 使用紧急提示，立即返回静态文本
-                        speech_content = get_smart_prompt(
-                            direction='fight',
-                            obstacles=[],
-                            position=None,
-                            urgency='urgent',
-                            user_settings=user_settings
-                        )
+                        speech_content = "前方有冲突"
                         current_speech_text = speech_content
-                        # 设置音画同步状态（紧急模式，带时间戳）
                         set_speech_sync_state(fid, frame, speech_content, is_urgent=True, capture_ts=capture_ts)
-                        # 使用紧急播报函数 - 清空队列并立即播放
-                        speak_urgent(speech_content, user_settings)
-                        # 更新fight专用时间戳
-                        last_fight_urgent_time = current_time
-                        last_fight_speak_time = current_time
-                        print(f"[语音提示-紧急] ⚠️ 暴力行为检测 - {speech_content} (置信度: {fight_confidence:.2f})")
+                        speak_urgent(speech_content, user_settings)  # 最高优先级，语速加快
+                        last_fight_speak_time_v3 = current_time
+                        print(f"[语音提示-紧急] 模型3冲突检测 - {speech_content} (连续{consecutive_violence_frames}帧, 面积: {violence_fight_area_ratio*100:.1f}%, 置信度: {violence_fight_confidence:.2f})")
                     except Exception as e:
-                        print(f"[语音提示] 暴力行为语音播放错误: {e}")
-
+                        print(f"[语音提示] 冲突检测语音播放错误: {e}")
             # === 危险消失检测：当障碍物或打架消失后，重新提示当前盲道方向 ===
             # 智能判断：只有之前确实播报过警示，且连续多帧没有检测到危险时才播报"已通过"
             danger_cleared = False
             clear_type = None
             
             # 检测打架消失
-            if was_fight_detected and not fight_detected:
+            if was_fight_detected and not violence_fight_detected:
                 danger_cleared = True
                 clear_type = 'fight'
                 print("[危险消失] 打架行为已消失")
@@ -1364,86 +1469,8 @@ def combiner_worker():
                 except Exception as e:
                     print(f"[语音提示] 危险消失提示错误: {e}")
             
-            # === MediaPipe 姿态分析处理 ===
-            if MEDIAPIPE_ENABLED and 'pose' in buf:
-                pose_res = buf['pose']
-                pose_result = pose_res.get('pose_result', {})
-                
-                # 绘制姿态分析结果到主画面
-                if pose_result.get('detected'):
-                    # 绘制骨架（如果有）
-                    from utils.pose_utils import mp_drawing, mp_pose
-                    if mp_drawing and mp_pose and pose_result.get('pose_results'):
-                        mp_drawing.draw_landmarks(
-                            frame,
-                            pose_result['pose_results'].pose_landmarks,
-                            mp_pose.POSE_CONNECTIONS,
-                            landmark_drawing_spec=mp_drawing.DrawingSpec(
-                                color=(255, 0, 255), thickness=2, circle_radius=2
-                            ),
-                            connection_drawing_spec=mp_drawing.DrawingSpec(
-                                color=(255, 0, 255), thickness=1
-                            )
-                        )
-                    
-                    # 在画面上显示姿态信息（使用中文）
-                    y_offset = frame.shape[0] - 80  # 从底部往上显示
-                    
-                    # 显示朝向信息
-                    if pose_result.get('orientation'):
-                        ori = pose_result['orientation']
-                        ori_color = (0, 255, 255) if ori.get('approaching') else (0, 255, 0)
-                        approaching_text = " [正在接近]" if ori.get('approaching') else ""
-                        ori_text = f"行人: {ori.get('description', '未知')}{approaching_text}"
-                        frame = put_chinese_text(frame, ori_text, (10, y_offset), ori_color, font_size=22)
-                        y_offset += 30
-                    
-                    # 显示异常信息
-                    if pose_result.get('abnormality') and pose_result['abnormality'].get('is_abnormal'):
-                        abn = pose_result['abnormality']
-                        abn_color = (0, 0, 255) if abn.get('severity', 0) >= 2 else (0, 165, 255)
-                        abn_text = f"⚠ 姿态警告: {abn.get('description', '异常')}"
-                        frame = put_chinese_text(frame, abn_text, (10, y_offset), abn_color, font_size=22)
-                
-                # 姿态异常语音提示
-                pose_alert_level = pose_result.get('alert_level', 0)
-                
-                if pose_alert_level > 0:
-                    consecutive_pose_alert_frames += 1
-                else:
-                    consecutive_pose_alert_frames = 0
-                
-                # 只有连续多帧检测到异常才触发语音（避免误报）
-                if (consecutive_pose_alert_frames >= MIN_POSE_ALERT_FRAMES and
-                    current_time - last_pose_speak_time >= POSE_SPEAK_INTERVAL):
-                    try:
-                        # 生成姿态提示语音
-                        pose_prompt = get_pose_voice_prompt(pose_result)
-                        if pose_prompt and should_speak_now(current_time):
-                            user_settings = get_user_settings_for_video()
-                            
-                            # 判断是否需要紧急播报（跌倒或攻击）
-                            abnormality = pose_result.get('abnormality', {})
-                            is_urgent = abnormality.get('severity', 0) >= 3
-                            
-                            current_speech_text = pose_prompt
-                            set_speech_sync_state(fid, frame, pose_prompt, is_urgent=is_urgent, capture_ts=capture_ts)
-                            _ts = time.time()
-                            
-                            if is_urgent:
-                                speak_urgent(pose_prompt, user_settings)
-                                print(f"[语音提示-紧急] ⚠️ 姿态异常 - {pose_prompt}")
-                            else:
-                                speak(pose_prompt, user_settings)
-                                print(f"[语音提示] 姿态分析 - {pose_prompt}")
-                            
-                            update_voice_ready(_ts)
-                            last_pose_speak_time = current_time
-                    except Exception as e:
-                        print(f"[语音提示] 姿态语音播放错误: {e}")
-            
             # 更新上一帧的危险状态
-            was_fight_detected = fight_detected
+            was_fight_detected = violence_fight_detected
             was_obstacle_detected = obstacle_detected_on_path  # 只追踪盲道上的障碍物
 
             # 送给显示线程（携带帧ID和时间戳用于音画同步）
@@ -1605,17 +1632,10 @@ def start_async_processing(video_path):
             lambda: push_inference(vio_queue, violence_model, 'violence', (0,255,255)),
             'VioWorker'), daemon=True, name='VioWorker').start()
         
-        # MediaPipe 姿态分析线程
-        if MEDIAPIPE_ENABLED:
-            threading.Thread(target=safe_thread_wrapper(
-                lambda: push_pose_inference(pose_queue),
-                'PoseWorker'), daemon=True, name='PoseWorker').start()
-            print("[异步管道] ✓ MediaPipe 姿态分析线程已启动")
-        
         threading.Thread(target=safe_thread_wrapper(
             combiner_worker, "Combiner"), daemon=True, name="Combiner").start()
 
-        model_count = 4 if MEDIAPIPE_ENABLED else 3
+        model_count = 3  # 盲道+环境+暴力检测
         print(f"[异步管道] ✓ 异步处理管道已启动 ({model_count}线程)")
 
 
@@ -1708,12 +1728,6 @@ def frame_reader_worker():
                                   'capture_ts': capture_ts})  # 添加捕获时间戳
                 except queue.Full:
                     pass
-            # MediaPipe 姿态分析队列
-            if MEDIAPIPE_ENABLED:
-                try:
-                    pose_queue.put_nowait({'frame': frame.copy(),
-                                           'fid': frame_count,
-                                           'capture_ts': capture_ts})  # 添加捕获时间戳
                 except queue.Full:
                     pass
             # 始终按源 FPS 节流，避免一次性读完整段视频
@@ -2767,34 +2781,6 @@ def video_feed_violence():
                     mimetype='multipart/x-mixed-replace; boundary=frame')
 
 
-@video_bp.route('/video_feed/pose')
-def video_feed_pose():
-    """MediaPipe 姿态分析视频流式传输端点"""
-    if not MEDIAPIPE_ENABLED:
-        return Response(_stream_from_display_queue(None, "MediaPipe 未启用"),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
-    return Response(_stream_from_display_queue(pose_display_queue, "等待测试开始"),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-@video_bp.route('/get_model_stats/pose')
-def get_pose_stats():
-    """获取 MediaPipe 姿态分析的性能统计"""
-    global pose_model_stats
-    
-    if not MEDIAPIPE_ENABLED:
-        return jsonify({
-            'fps': 0,
-            'latency': 0,
-            'confidence': 0,
-            'last_update': 0,
-            'enabled': False,
-            'status': 'MediaPipe 未启用'
-        })
-    
-    last_update = pose_model_stats.get('last_update', 0)
-    active = video_active and (time.time() - last_update < 3)
-    
     return jsonify({
         'fps': pose_model_stats.get('fps', 0),
         'latency': pose_model_stats.get('latency', 0),
@@ -3194,3 +3180,23 @@ def get_models_status():
             }
         }
 })
+
+
+@video_bp.route('/get_pipeline_status', methods=['GET'])
+def get_pipeline_status():
+    """获取异步管道线程状态（用于排查“秒退/卡住”）"""
+    return jsonify({
+        "status": "success",
+        "running": bool(thread_control.get('running')),
+        "reader_alive": bool(thread_control.get('reader_alive')),
+        "inference_alive": bool(thread_control.get('inference_alive')),
+        "error": thread_control.get('error'),
+        "queues": {
+            "blind_queue": blind_queue.qsize(),
+            "env_queue": env_queue.qsize(),
+            "vio_queue": vio_queue.qsize(),
+            "pose_queue": pose_queue.qsize() if 'pose_queue' in globals() else None,
+            "combined_queue": combined_queue.qsize(),
+            "result_queue": result_queue.qsize(),
+        }
+    })
